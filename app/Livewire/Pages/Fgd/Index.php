@@ -55,7 +55,11 @@ class Index extends Component
     public function validateDus(FgdService $service): void
     {
         $this->validate([
-            'packingBarcode' => ['required'],
+            'packingBarcode'  => ['required'],
+            'selectedRackId'  => ['required', 'integer'],
+        ], [
+            'selectedRackId.required' => 'Pilih RAK FGW terlebih dahulu sebelum scan dus.',
+            'selectedRackId.integer'  => 'RAK tidak valid.',
         ]);
 
         try {
@@ -64,14 +68,19 @@ class Index extends Component
                 packingBarcode: trim($this->packingBarcode)
             );
 
-            if (in_array($result->barcode, $this->validatedItems)) {
+            if (isset($this->validatedItems[$result->barcode])) {
                 $this->packingBarcode = '';
                 session()->flash('scan_error', 'Dus sudah discan sebelumnya.');
                 $this->dispatch('fgw-ready-again');
                 return;
             }
 
-            $this->validatedItems[] = $result->barcode;
+            // Simpan barcode → [rack_id, packing_unit_id]
+            $this->validatedItems[$result->barcode] = [
+                'rack_id'        => (int) $this->selectedRackId,
+                'packing_unit_id' => (int) $result->id,
+            ];
+
             $this->totalValidated = count($this->validatedItems);
             $this->packingBarcode = '';
 
@@ -87,12 +96,6 @@ class Index extends Component
 
     public function completeReceiving(FgdService $service): void
     {
-        $this->validate([
-            'selectedRackId' => ['required', 'integer'],
-        ], [
-            'selectedRackId.required' => 'RAK wajib dipilih dulu.',
-        ]);
-
         try {
             if (!$this->selectedTrolley) {
                 throw new \Exception('Troli belum dipilih.');
@@ -102,13 +105,19 @@ class Index extends Component
                 throw new \Exception('Dus belum lengkap divalidasi.');
             }
 
+            // Bangun map: [packing_unit_id => rack_id]
+            $packingRackMap = [];
+            foreach ($this->validatedItems as $data) {
+                $packingRackMap[$data['packing_unit_id']] = $data['rack_id'];
+            }
+
             $service->completeFgwReceiving(
                 trolleyId: $this->selectedTrolley->id,
-                rackId: $this->selectedRackId,
+                packingRackMap: $packingRackMap,
                 userId: auth()->id()
             );
 
-            session()->flash('success', 'Semua dus tervalidasi. Troli diterima FGW dan masuk rak.');
+            session()->flash('success', 'Semua dus tervalidasi. Troli diterima FGW dan dus tersimpan ke rak masing-masing.');
 
             $this->closeModal();
         } catch (\Exception $e) {
@@ -158,8 +167,9 @@ class Index extends Component
     public function render(FgdService $service)
     {
         return view('livewire.pages.fgd.index', [
-            'summary' => $service->summary(),
-            'racks' => $service->getActiveRacks(),
+            'summary'      => $service->summary(),
+            'racks'        => $service->getActiveRacks(),
+            'dusPerRack'   => $service->dusPerRack(),
             'recentTrolleys' => $service->recentReceivedTrolleys(),
         ]);
     }

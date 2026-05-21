@@ -11,10 +11,29 @@ class FgdService
         $result = DB::select("
             SELECT
                 (SELECT COUNT(*) FROM trolleys WHERE status = 'SENT_FGW') as waiting_validation,
-                (SELECT COUNT(*) FROM trolleys WHERE status = 'RECEIVED_FGW' AND DATE(received_fgw_at) = CURDATE()) as received_today
+                (SELECT COUNT(*) FROM trolleys WHERE status = 'RECEIVED_FGW' AND DATE(received_fgw_at) = CURDATE()) as received_today,
+                (SELECT COUNT(*) FROM packing_units WHERE status = 'RECEIVED_FGW') as total_dus_fgw
         ");
 
         return $result[0];
+    }
+
+    public function dusPerRack(): array
+    {
+        return DB::select("
+            SELECT
+                r.id,
+                r.rack_code,
+                r.rack_name,
+                COUNT(pu.id) as total_dus
+            FROM fgw_racks r
+            LEFT JOIN packing_units pu
+                ON pu.fgw_rack_id = r.id
+                AND pu.status = 'RECEIVED_FGW'
+            WHERE r.is_active = 1
+            GROUP BY r.id, r.rack_code, r.rack_name
+            ORDER BY r.rack_code ASC
+        ");
     }
 
     public function getActiveRacks(): array
@@ -103,26 +122,28 @@ class FgdService
         return $result[0];
     }
 
-    public function completeFgwReceiving(int $trolleyId, int $rackId, int $userId): void
+    /**
+     * @param  array<int, int>  $packingRackMap  [packing_unit_id => rack_id]
+     */
+    public function completeFgwReceiving(int $trolleyId, array $packingRackMap, int $userId): void
     {
-        $rack = DB::select("
-            SELECT id
-            FROM fgw_racks
-            WHERE id = ?
-            AND is_active = 1
-            LIMIT 1
-        ", [$rackId]);
-
-        if (!$rack) {
-            throw new \Exception('RAK tidak valid atau tidak aktif.');
+        if (empty($packingRackMap)) {
+            throw new \Exception('Tidak ada dus yang tervalidasi.');
         }
 
-        $trolley = DB::select("
-            SELECT *
-            FROM trolleys
-            WHERE id = ?
-            LIMIT 1
-        ", [$trolleyId]);
+        // Validasi semua rack aktif sekaligus
+        $rackIds = array_unique(array_values($packingRackMap));
+        $placeholders = implode(',', array_fill(0, count($rackIds), '?'));
+        $validRacks = DB::select(
+            "SELECT id FROM fgw_racks WHERE id IN ($placeholders) AND is_active = 1",
+            $rackIds
+        );
+
+        if (count($validRacks) !== count($rackIds)) {
+            throw new \Exception('Satu atau lebih RAK tidak valid atau tidak aktif.');
+        }
+
+        $trolley = DB::select("SELECT * FROM trolleys WHERE id = ? LIMIT 1", [$trolleyId]);
 
         if (!$trolley) {
             throw new \Exception('Troli tidak ditemukan.');
@@ -137,32 +158,32 @@ class FgdService
         DB::beginTransaction();
 
         try {
+            // Update trolley — rack tidak disimpan di level troli lagi (partial rack)
             DB::update("
                 UPDATE trolleys
                 SET
                     status = 'RECEIVED_FGW',
-                    fgw_rack_id = ?,
+                    fgw_rack_id = NULL,
                     received_fgw_at = NOW(),
                     received_fgw_by = ?,
                     updated_at = NOW()
                 WHERE id = ?
-            ", [
-                $rackId,
-                $userId,
-                $trolleyId,
-            ]);
+            ", [$userId, $trolleyId]);
 
-            DB::update("
-                UPDATE packing_units
-                SET
-                    status = 'RECEIVED_FGW',
-                    updated_at = NOW()
-                WHERE id IN (
-                    SELECT packing_unit_id
-                    FROM trolley_items
-                    WHERE trolley_id = ?
-                )
-            ", [$trolleyId]);
+            // Update setiap packing_unit dengan rack-nya masing-masing
+            foreach ($packingRackMap as $packingUnitId => $rackId) {
+                DB::update("
+                    UPDATE packing_units
+                    SET
+                        status = 'RECEIVED_FGW',
+                        fgw_rack_id = ?,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ", [$rackId, $packingUnitId]);
+            }
+
+            $totalDus = count($packingRackMap);
+            $totalRak = count($rackIds);
 
             DB::insert("
                 INSERT INTO trolley_histories (
@@ -176,7 +197,7 @@ class FgdService
                 VALUES (?, 'RECEIVED_FGW', ?, ?, NOW(), NOW())
             ", [
                 $trolleyId,
-                'Troli diterima dan tervalidasi FGW. Rack ID: ' . $rackId,
+                "Troli diterima FGW. {$totalDus} dus tervalidasi ke {$totalRak} rak.",
                 $userId,
             ]);
 
@@ -265,13 +286,16 @@ class FgdService
                 po.spk_number,
                 po.production_date,
                 i.item_code,
-                i.item_name
+                i.item_name,
+                r.rack_code,
+                r.rack_name
             FROM trolley_items ti
             INNER JOIN packing_units pu ON ti.packing_unit_id = pu.id
             INNER JOIN production_orders po ON pu.production_order_id = po.id
             INNER JOIN items i ON pu.item_id = i.id
+            LEFT JOIN fgw_racks r ON pu.fgw_rack_id = r.id
             WHERE ti.trolley_id = ?
-            ORDER BY ti.id ASC
+            ORDER BY r.rack_code ASC, pu.box_number ASC
         ", [$trolleyId]);
 
         return [

@@ -41,7 +41,7 @@
     @endif
 
     <div class="row g-3 mb-4 fgd-summary">
-        <div class="col-6 col-md-6">
+        <div class="col-12 col-md-4">
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted small">Menunggu Validasi</div>
@@ -51,7 +51,7 @@
             </div>
         </div>
 
-        <div class="col-6 col-md-6">
+        <div class="col-12 col-md-4">
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted small">Diterima Hari Ini</div>
@@ -59,6 +59,72 @@
                     <div class="small text-muted">Troli masuk FGW</div>
                 </div>
             </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body">
+                    <div class="text-muted small">Total DUS di FGW</div>
+                    <div class="fs-2 fw-bold text-primary">{{ number_format($summary->total_dus_fgw) }}</div>
+                    <div class="small text-muted">Packing unit tersimpan di rak</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Stok DUS per RAK --}}
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <h5 class="fw-bold mb-1">Stok per RAK FGW</h5>
+                    <div class="text-muted small mb-3">Jumlah dus yang tersimpan di setiap rak saat ini.</div>
+                </div>
+                <div class="text-muted small">
+                    Total {{ number_format($summary->total_dus_fgw) }} dus
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body px-4 pb-4">
+            @if (count($dusPerRack) > 0)
+                <div class="row g-3">
+                    @foreach ($dusPerRack as $rack)
+                        @php
+                            $pct = $summary->total_dus_fgw > 0
+                                ? ($rack->total_dus / $summary->total_dus_fgw) * 100
+                                : 0;
+                            $isEmpty = $rack->total_dus === 0;
+                        @endphp
+                        <div class="col-6 col-sm-4 col-md-3 col-xl-2">
+                            <div class="card border rounded-4 h-100 {{ $isEmpty ? 'border-light bg-light' : 'border-primary-subtle' }}">
+                                <div class="card-body p-3 text-center">
+                                    <div class="fw-bold text-primary mb-1" style="font-size: .7rem; letter-spacing: .05em; text-transform: uppercase;">
+                                        {{ $rack->rack_code }}
+                                    </div>
+                                    <div class="fw-bold {{ $isEmpty ? 'text-muted' : '' }}" style="font-size: 1.6rem; line-height: 1.1;">
+                                        {{ number_format($rack->total_dus) }}
+                                    </div>
+                                    <div class="text-muted" style="font-size: .72rem;">dus</div>
+
+                                    {{-- Mini progress --}}
+                                    <div class="progress rounded-pill mt-2" style="height: 4px;">
+                                        <div
+                                            class="progress-bar {{ $isEmpty ? 'bg-secondary' : 'bg-primary' }}"
+                                            style="width: {{ $pct }}%"
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-grid-3x3-gap fs-1 d-block mb-2 opacity-25"></i>
+                    Belum ada RAK aktif.
+                </div>
+            @endif
         </div>
     </div>
 
@@ -194,36 +260,23 @@
                             </div>
                         @endif
 
+                        {{-- Info Troli + Progress --}}
                         <div class="border rounded-4 p-3 mb-3 bg-light">
-                            <div class="row g-3">
-                                <div class="col-lg-4">
+                            <div class="row g-3 align-items-center">
+                                <div class="col-lg-6">
                                     <div class="small text-muted">Troli</div>
                                     <div class="fw-bold fs-5">{{ $selectedTrolley->trolley_code ?? '-' }}</div>
-                                    <code>{{ $selectedTrolley->barcode ?? '-' }}</code>
+                                    <code class="small">{{ $selectedTrolley->barcode ?? '-' }}</code>
                                 </div>
 
-                                <div class="col-lg-4">
-                                    <label class="form-label fw-semibold">Pilih RAK FGW</label>
-                                    <select wire:model="selectedRackId" class="form-select rounded-3">
-                                        <option value="">Pilih RAK</option>
-                                        @foreach ($racks as $rack)
-                                            <option value="{{ $rack->id }}">
-                                                {{ $rack->rack_code }} - {{ $rack->rack_name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @error('selectedRackId')
-                                        <small class="text-danger">{{ $message }}</small>
-                                    @enderror
-                                </div>
-
-                                <div class="col-lg-4">
+                                <div class="col-lg-6">
                                     <div class="d-flex justify-content-between small mb-1">
-                                        <span>Progress Validasi</span>
-                                        <span>{{ $totalValidated }}/{{ count($trolleyItems) }}</span>
+                                        <span class="fw-semibold">Progress Validasi</span>
+                                        <span class="{{ $totalValidated === count($trolleyItems) && count($trolleyItems) > 0 ? 'text-success fw-bold' : '' }}">
+                                            {{ $totalValidated }}/{{ count($trolleyItems) }} dus
+                                        </span>
                                     </div>
-
-                                    <div class="progress" style="height: 10px;">
+                                    <div class="progress rounded-3" style="height: 12px;">
                                         <div
                                             class="progress-bar bg-success"
                                             style="width: {{ count($trolleyItems) > 0 ? ($totalValidated / count($trolleyItems)) * 100 : 0 }}%"
@@ -233,30 +286,88 @@
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Barcode Dus</label>
+                        {{-- Scan Panel --}}
+                        <div class="border rounded-4 p-4 mb-3">
+                            <div class="row g-4">
+                                {{-- Kolom kiri: RAK --}}
+                                <div class="col-md-5">
+                                    <label class="form-label fw-semibold mb-2">
+                                        <i class="bi bi-grid-3x3-gap me-1 text-primary"></i>
+                                        RAK Tujuan
+                                        <span class="text-danger">*</span>
+                                    </label>
+                                    <select wire:model="selectedRackId" class="form-select form-select-lg rounded-3 @error('selectedRackId') is-invalid @enderror">
+                                        <option value="">Pilih RAK...</option>
+                                        @foreach ($racks as $rack)
+                                            <option value="{{ $rack->id }}">
+                                                {{ $rack->rack_code }} — {{ $rack->rack_name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('selectedRackId')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
 
-                            <input
-                                type="text"
-                                id="fgwPackingInput"
-                                wire:model.defer="packingBarcode"
-                                class="form-control form-control-lg rounded-3 text-center fw-bold"
-                                placeholder="Scan barcode dus"
-                                autocomplete="off"
-                            >
+                                {{-- Divider vertikal (desktop) --}}
+                                <div class="col-md-1 d-none d-md-flex align-items-center justify-content-center">
+                                    <div class="vr" style="height: 48px;"></div>
+                                </div>
+
+                                {{-- Kolom kanan: Barcode Dus --}}
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold mb-2">
+                                        <i class="bi bi-upc-scan me-1 text-primary"></i>
+                                        Barcode Dus
+                                    </label>
+                                    <div class="input-group input-group-lg">
+                                        <input
+                                            type="text"
+                                            id="fgwPackingInput"
+                                            wire:model.defer="packingBarcode"
+                                            class="form-control rounded-start-3 text-center fw-bold"
+                                            placeholder="Scan barcode dus..."
+                                            autocomplete="off"
+                                        >
+                                        <button type="submit" class="btn btn-primary px-4 rounded-end-3">
+                                            <i class="bi bi-upc-scan me-1"></i> Scan
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Hint --}}
+                            <div class="mt-3 pt-3 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                <div class="text-muted small">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Pilih RAK, lalu scan dus. Tiap dus bisa diarahkan ke RAK berbeda.
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn btn-success rounded-3 px-4"
+                                    wire:click="completeReceiving"
+                                    @disabled($totalValidated < count($trolleyItems) || count($trolleyItems) === 0)
+                                >
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    Complete Receive
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="d-flex justify-content-end mb-3">
-                            <button
-                                type="button"
-                                class="btn btn-success rounded-3 px-4"
-                                wire:click="completeReceiving"
-                                @disabled($totalValidated < count($trolleyItems) || count($trolleyItems) === 0)
-                            >
-                                <i class="bi bi-check-circle me-1"></i>
-                                Complete Receive
-                            </button>
-                        </div>
+                        {{-- Tabel Dus --}}
+                        @php
+                            $racksById = collect($racks)->keyBy('id');
+
+                            $waitingItems = collect($trolleyItems)
+                                ->filter(fn ($item) => !isset($validatedItems[$item->barcode]))
+                                ->values();
+
+                            $validatedItemRows = collect($trolleyItems)
+                                ->filter(fn ($item) => isset($validatedItems[$item->barcode]))
+                                ->values();
+
+                            $sortedTrolleyItems = $waitingItems->concat($validatedItemRows);
+                        @endphp
 
                         <div class="table-responsive">
                             <table class="table table-hover align-middle">
@@ -267,26 +378,18 @@
                                         <th>Item</th>
                                         <th>SPK</th>
                                         <th>Qty</th>
+                                        <th>RAK</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
 
                                 <tbody>
-                                    @php
-                                        $waitingItems = collect($trolleyItems)
-                                            ->filter(fn ($item) => !in_array($item->barcode, $validatedItems))
-                                            ->values();
-
-                                        $validatedItemRows = collect($trolleyItems)
-                                            ->filter(fn ($item) => in_array($item->barcode, $validatedItems))
-                                            ->values();
-
-                                        $sortedTrolleyItems = $waitingItems->concat($validatedItemRows);
-                                    @endphp
-
                                     @foreach ($sortedTrolleyItems as $item)
                                         @php
-                                            $isValidated = in_array($item->barcode, $validatedItems);
+                                            $isValidated  = isset($validatedItems[$item->barcode]);
+                                            $assignedRack = $isValidated
+                                                ? ($racksById[$validatedItems[$item->barcode]['rack_id']] ?? null)
+                                                : null;
                                         @endphp
 
                                         <tr class="{{ $isValidated ? 'table-success' : '' }}">
@@ -298,6 +401,13 @@
                                             </td>
                                             <td>{{ $item->spk_number }}</td>
                                             <td>{{ number_format($item->qty, 0, ',', '.') }} {{ $item->uom }}</td>
+                                            <td>
+                                                @if ($assignedRack)
+                                                    <span class="badge text-bg-primary rounded-pill">{{ $assignedRack->rack_code }}</span>
+                                                @else
+                                                    <span class="text-muted small">—</span>
+                                                @endif
+                                            </td>
                                             <td>
                                                 @if ($isValidated)
                                                     <span class="badge text-bg-success rounded-pill">VALIDATED</span>
@@ -367,19 +477,33 @@
                         <table class="table table-hover align-middle">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Barcode</th>
+                                    <th class="ps-3">Barcode</th>
                                     <th>Box</th>
                                     <th>Item</th>
                                     <th>SPK</th>
                                     <th>Qty</th>
+                                    <th>Lokasi RAK</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
 
                             <tbody>
+                                @php $lastRack = null; @endphp
                                 @forelse ($receivedDetailItems as $item)
+                                    @if ($item->rack_code !== $lastRack)
+                                        <tr class="table-primary">
+                                            <td colspan="7" class="ps-3 py-2">
+                                                <i class="bi bi-grid-3x3-gap me-1"></i>
+                                                <span class="fw-semibold">RAK {{ $item->rack_code ?? '—' }}</span>
+                                                @if ($item->rack_name)
+                                                    <span class="text-muted small ms-1">— {{ $item->rack_name }}</span>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                        @php $lastRack = $item->rack_code; @endphp
+                                    @endif
                                     <tr>
-                                        <td><code>{{ $item->barcode }}</code></td>
+                                        <td class="ps-3"><code>{{ $item->barcode }}</code></td>
                                         <td>{{ $item->box_number }}</td>
                                         <td>
                                             <div class="fw-semibold">{{ $item->item_name }}</div>
@@ -388,12 +512,20 @@
                                         <td>{{ $item->spk_number }}</td>
                                         <td>{{ number_format($item->qty, 0, ',', '.') }} {{ $item->uom }}</td>
                                         <td>
+                                            @if ($item->rack_code)
+                                                <span class="badge text-bg-primary rounded-pill">{{ $item->rack_code }}</span>
+                                            @else
+                                                <span class="text-muted small">—</span>
+                                            @endif
+                                        </td>
+                                        <td>
                                             <span class="badge rounded-pill text-bg-success">{{ $item->status }}</span>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="text-center text-muted py-5">
+                                        <td colspan="7" class="text-center text-muted py-5">
+                                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
                                             Detail kosong.
                                         </td>
                                     </tr>

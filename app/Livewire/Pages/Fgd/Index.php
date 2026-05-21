@@ -68,16 +68,30 @@ class Index extends Component
                 packingBarcode: trim($this->packingBarcode)
             );
 
+            $newRackId = (int) $this->selectedRackId;
+
             if (isset($this->validatedItems[$result->barcode])) {
+                $prevRackId = $this->validatedItems[$result->barcode]['rack_id'];
+
+                if ($prevRackId === $newRackId) {
+                    // Rak sama → tolak, sudah discan
+                    $this->packingBarcode = '';
+                    session()->flash('scan_error', 'Dus sudah discan ke rak yang sama sebelumnya.');
+                    $this->dispatch('fgw-ready-again');
+                    return;
+                }
+
+                // Rak berbeda → update rak
+                $this->validatedItems[$result->barcode]['rack_id'] = $newRackId;
                 $this->packingBarcode = '';
-                session()->flash('scan_error', 'Dus sudah discan sebelumnya.');
+                session()->flash('scan_success', 'RAK diperbarui untuk dus ini.');
                 $this->dispatch('fgw-ready-again');
                 return;
             }
 
-            // Simpan barcode → [rack_id, packing_unit_id]
+            // Dus baru → simpan barcode → [rack_id, packing_unit_id]
             $this->validatedItems[$result->barcode] = [
-                'rack_id'        => (int) $this->selectedRackId,
+                'rack_id'         => $newRackId,
                 'packing_unit_id' => (int) $result->id,
             ];
 
@@ -167,9 +181,10 @@ class Index extends Component
     public function render(FgdService $service)
     {
         return view('livewire.pages.fgd.index', [
-            'summary'      => $service->summary(),
-            'racks'        => $service->getActiveRacks(),
-            'dusPerRack'   => $service->dusPerRack(),
+            'summary'        => $service->summary(),
+            'racks'          => $service->getActiveRacks(),
+            'dusPerRack'     => $service->dusPerRack(),
+            'stockByItem'    => $service->stockByItem(),
             'recentTrolleys' => $service->recentReceivedTrolleys(),
         ]);
     }

@@ -36,6 +36,27 @@ class FgdService
         ");
     }
 
+    public function stockByItem(): array
+    {
+        return DB::select("
+            SELECT
+                i.id          as item_id,
+                i.item_code,
+                i.item_name,
+                COALESCE(r.rack_code, '—') as rack_code,
+                COALESCE(r.rack_name,  '—') as rack_name,
+                COUNT(pu.id)  as total_dus,
+                SUM(pu.qty)   as total_pcs,
+                MIN(pu.qty)   as qty_per_box
+            FROM packing_units pu
+            INNER JOIN items i ON pu.item_id = i.id
+            LEFT JOIN fgw_racks r ON pu.fgw_rack_id = r.id
+            WHERE pu.status = 'RECEIVED_FGW'
+            GROUP BY i.id, i.item_code, i.item_name, r.id, r.rack_code, r.rack_name
+            ORDER BY i.item_code ASC, r.rack_code ASC
+        ");
+    }
+
     public function getActiveRacks(): array
     {
         return DB::select("
@@ -132,7 +153,8 @@ class FgdService
         }
 
         // Validasi semua rack aktif sekaligus
-        $rackIds = array_unique(array_values($packingRackMap));
+        // array_values() wajib setelah array_unique() agar key sequential untuk PDO binding
+        $rackIds = array_values(array_unique(array_values($packingRackMap)));
         $placeholders = implode(',', array_fill(0, count($rackIds), '?'));
         $validRacks = DB::select(
             "SELECT id FROM fgw_racks WHERE id IN ($placeholders) AND is_active = 1",

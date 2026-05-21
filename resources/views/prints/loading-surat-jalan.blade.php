@@ -136,7 +136,7 @@
     <div class="page">
         <div class="header">
             <h1>SURAT JALAN</h1>
-            <div class="meta">Camiloplas Logistic</div>
+            <div class="meta"> Logistic</div>
         </div>
 
         <div class="grid meta">

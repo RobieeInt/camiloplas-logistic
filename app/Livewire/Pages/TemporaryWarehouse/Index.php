@@ -22,6 +22,7 @@ class Index extends Component
 
     public ?int $productionOrderId = null;
     public int $totalBox = 1;
+    public int $qtyPerBox = 1000;
 
     public ?int $selectedTrolleyId = null;
     public string $selectedTrolleyCode = '';
@@ -43,6 +44,7 @@ class Index extends Component
     {
         $this->productionOrderId = null;
         $this->totalBox = 1;
+        $this->qtyPerBox = 1000;
         $this->showPrintModal = true;
     }
 
@@ -56,19 +58,26 @@ class Index extends Component
     {
         $this->validate([
             'productionOrderId' => ['required', 'integer'],
-            'totalBox' => ['required', 'integer', 'min:1', 'max:500'],
+            'totalBox'          => ['required', 'integer', 'min:1', 'max:500'],
+            'qtyPerBox'         => ['required', 'integer', 'min:1', 'max:100000'],
+        ], [
+            'qtyPerBox.required' => 'Qty per dus wajib diisi.',
+            'qtyPerBox.min'      => 'Qty per dus minimal 1 PCS.',
+            'qtyPerBox.max'      => 'Qty per dus maksimal 100.000 PCS.',
         ]);
 
         try {
             $batchId = $service->printBarcode(
                 productionOrderId: $this->productionOrderId,
                 totalBox: $this->totalBox,
+                qtyPerBox: $this->qtyPerBox,
                 userId: auth()->id()
             );
 
             $this->showPrintModal = false;
-            $this->reset(['productionOrderId', 'totalBox']);
+            $this->reset(['productionOrderId', 'totalBox', 'qtyPerBox']);
             $this->totalBox = 1;
+            $this->qtyPerBox = 1000;
 
             $this->redirectRoute('temporary-warehouse.print-labels', [
                 'batch_id' => $batchId,

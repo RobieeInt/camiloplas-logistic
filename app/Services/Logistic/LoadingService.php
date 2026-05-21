@@ -19,6 +19,335 @@ class LoadingService
         return $result[0];
     }
 
+    public function getSalesOrders(): array
+    {
+        return DB::select("
+            SELECT
+                so.id,
+                so.so_number,
+                so.customer_name,
+                so.customer_address,
+                so.status,
+                COUNT(sod.id) as total_items
+            FROM sales_orders so
+            LEFT JOIN sales_order_details sod ON so.id = sod.sales_order_id
+            WHERE so.status = 'OPEN'
+            GROUP BY so.id, so.so_number, so.customer_name, so.customer_address, so.status
+            ORDER BY so.id DESC
+        ");
+    }
+
+    public function getMultipleSoDetails(array $soIds): array
+    {
+        if (empty($soIds)) {
+            return ['sos' => [], 'details' => []];
+        }
+
+        $soIds        = array_values(array_unique(array_map('intval', $soIds)));
+        $placeholders = implode(',', array_fill(0, count($soIds), '?'));
+
+        $sos = DB::select("
+            SELECT id, so_number, customer_name, customer_address, status
+            FROM sales_orders
+            WHERE id IN ($placeholders)
+            ORDER BY id ASC
+        ", $soIds);
+
+        if (empty($sos)) {
+            return ['sos' => [], 'details' => []];
+        }
+
+        // Merge item by item_id, sum qty across all selected SOs + stok FGW
+        $details = DB::select("
+            SELECT
+                sod.item_id,
+                i.item_code,
+                i.item_name,
+                i.uom,
+                SUM(sod.qty) as qty,
+                (
+                    SELECT COUNT(*)
+                    FROM packing_units pu
+                    WHERE pu.item_id = sod.item_id
+                    AND pu.status = 'RECEIVED_FGW'
+                ) as stock_dus,
+                (
+                    SELECT COALESCE(SUM(pu2.qty), 0)
+                    FROM packing_units pu2
+                    WHERE pu2.item_id = sod.item_id
+                    AND pu2.status = 'RECEIVED_FGW'
+                ) as stock_pcs,
+                (
+                    SELECT pu3.qty
+                    FROM packing_units pu3
+                    WHERE pu3.item_id = sod.item_id
+                    AND pu3.status = 'RECEIVED_FGW'
+                    LIMIT 1
+                ) as qty_per_box
+            FROM sales_order_details sod
+            INNER JOIN items i ON sod.item_id = i.id
+            WHERE sod.sales_order_id IN ($placeholders)
+            GROUP BY sod.item_id, i.item_code, i.item_name, i.uom
+            ORDER BY sod.item_id ASC
+        ", $soIds);
+
+        // Hitung PCS yang sudah masuk truck dari DO-DO milik SO ini
+        $loadedRows = DB::select("
+            SELECT
+                pu.item_id,
+                COALESCE(SUM(pu.qty), 0) as already_loaded_pcs
+            FROM loading_items li
+            INNER JOIN packing_units pu ON li.packing_unit_id = pu.id
+            INNER JOIN delivery_orders dox ON li.delivery_order_id = dox.id
+            WHERE dox.sales_order_id IN ($placeholders)
+            GROUP BY pu.item_id
+        ", $soIds);
+
+        $loadedMap = collect($loadedRows)->keyBy('item_id');
+
+        foreach ($details as $detail) {
+            $loaded                   = $loadedMap->get($detail->item_id);
+            $detail->already_loaded_pcs = $loaded ? (int) $loaded->already_loaded_pcs : 0;
+            $detail->remaining_pcs    = max(0, (int) $detail->qty - $detail->already_loaded_pcs);
+        }
+
+        return [
+            'sos'     => $sos,
+            'details' => $details,
+        ];
+    }
+
+    public function createDoFromSos(array $soIds, string $doNumber, array $requiredBoxes, int $userId): int
+    {
+        if (empty($soIds)) {
+            throw new \Exception('Pilih minimal 1 SO.');
+        }
+
+        $soIds        = array_values(array_unique(array_map('intval', $soIds)));
+        $placeholders = implode(',', array_fill(0, count($soIds), '?'));
+
+        $sos = DB::select("
+            SELECT id, so_number, customer_name
+            FROM sales_orders
+            WHERE id IN ($placeholders)
+            AND status = 'OPEN'
+            ORDER BY id ASC
+        ", $soIds);
+
+        if (count($sos) !== count($soIds)) {
+            throw new \Exception('Satu atau lebih SO tidak ditemukan atau tidak dalam status OPEN.');
+        }
+
+        $doNumber = trim($doNumber);
+        if (empty($doNumber)) {
+            throw new \Exception('DO Number wajib diisi.');
+        }
+
+        $exists = DB::select("SELECT id FROM delivery_orders WHERE do_number = ? LIMIT 1", [$doNumber]);
+        if ($exists) {
+            throw new \Exception("DO number {$doNumber} sudah digunakan.");
+        }
+
+        // Ambil semua item unik dari semua SO yang dipilih
+        $soDetails = DB::select("
+            SELECT DISTINCT item_id
+            FROM sales_order_details
+            WHERE sales_order_id IN ($placeholders)
+            ORDER BY item_id ASC
+        ", $soIds);
+
+        if (empty($soDetails)) {
+            throw new \Exception('SO yang dipilih belum memiliki detail item.');
+        }
+
+        $soNumbers     = implode(' / ', array_map(fn ($s) => $s->so_number, $sos));
+        $customerNames = array_unique(array_map(fn ($s) => $s->customer_name, $sos));
+        $customerName  = implode(' / ', $customerNames);
+
+        DB::beginTransaction();
+
+        try {
+            DB::insert("
+                INSERT INTO delivery_orders (
+                    sales_order_id,
+                    so_number,
+                    do_number,
+                    customer_name,
+                    truck_number,
+                    status,
+                    do_print_count,
+                    surat_jalan_print_count,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, NULL, 'READY', 0, 0, NOW(), NOW())
+            ", [
+                $sos[0]->id,   // first SO's ID
+                $soNumbers,
+                $doNumber,
+                $customerName,
+            ]);
+
+            $doId = (int) DB::getPdo()->lastInsertId();
+
+            foreach ($soDetails as $detail) {
+                $itemId = $detail->item_id;
+                $boxes  = (int) ($requiredBoxes[$itemId] ?? 0);
+
+                DB::insert("
+                    INSERT INTO delivery_order_items (
+                        delivery_order_id,
+                        item_id,
+                        required_boxes,
+                        loaded_boxes,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, 0, NOW(), NOW())
+                ", [$doId, $itemId, $boxes]);
+            }
+
+            DB::commit();
+
+            return $doId;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public function getSalesOrderWithDetails(int $soId): array
+    {
+        $so = DB::select("
+            SELECT id, so_number, customer_name, customer_address, status
+            FROM sales_orders
+            WHERE id = ?
+            LIMIT 1
+        ", [$soId]);
+
+        if (!$so) {
+            throw new \Exception('SO tidak ditemukan.');
+        }
+
+        $details = DB::select("
+            SELECT
+                sod.id,
+                sod.item_id,
+                sod.qty,
+                sod.uom,
+                sod.notes,
+                i.item_code,
+                i.item_name
+            FROM sales_order_details sod
+            INNER JOIN items i ON sod.item_id = i.id
+            WHERE sod.sales_order_id = ?
+            ORDER BY sod.id ASC
+        ", [$soId]);
+
+        return [
+            'so'      => $so[0],
+            'details' => $details,
+        ];
+    }
+
+    public function createDoFromSo(int $soId, string $doNumber, array $requiredBoxes, int $userId): int
+    {
+        $so = DB::select("SELECT * FROM sales_orders WHERE id = ? LIMIT 1", [$soId]);
+        if (!$so) {
+            throw new \Exception('SO tidak ditemukan.');
+        }
+        $so = $so[0];
+
+        $doNumber = trim($doNumber);
+        if (empty($doNumber)) {
+            throw new \Exception('DO Number wajib diisi.');
+        }
+
+        $exists = DB::select("SELECT id FROM delivery_orders WHERE do_number = ? LIMIT 1", [$doNumber]);
+        if ($exists) {
+            throw new \Exception("DO number {$doNumber} sudah digunakan.");
+        }
+
+        // Ambil semua item dari SO — semua item dimasukkan ke DO meski boxes = 0
+        $soDetails = DB::select("
+            SELECT item_id
+            FROM sales_order_details
+            WHERE sales_order_id = ?
+            ORDER BY id ASC
+        ", [$soId]);
+
+        if (empty($soDetails)) {
+            throw new \Exception('SO ini belum memiliki detail item. Tambahkan item ke SO terlebih dahulu.');
+        }
+
+        DB::beginTransaction();
+
+        try {
+            DB::insert("
+                INSERT INTO delivery_orders (
+                    sales_order_id,
+                    so_number,
+                    do_number,
+                    customer_name,
+                    truck_number,
+                    status,
+                    do_print_count,
+                    surat_jalan_print_count,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, NULL, 'READY', 0, 0, NOW(), NOW())
+            ", [
+                $soId,
+                $so->so_number,
+                $doNumber,
+                $so->customer_name,
+            ]);
+
+            $doId = (int) DB::getPdo()->lastInsertId();
+
+            // Insert semua item dari SO, required_boxes = 0 berarti tanpa target
+            foreach ($soDetails as $detail) {
+                $itemId  = $detail->item_id;
+                $boxes   = (int) ($requiredBoxes[$itemId] ?? 0);
+
+                DB::insert("
+                    INSERT INTO delivery_order_items (
+                        delivery_order_id,
+                        item_id,
+                        required_boxes,
+                        loaded_boxes,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, 0, NOW(), NOW())
+                ", [$doId, $itemId, $boxes]);
+            }
+
+            DB::commit();
+
+            return $doId;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public function nextDoNumber(): string
+    {
+        $today = now()->format('Ymd');
+
+        $result = DB::select("
+            SELECT COUNT(*) + 1 as next_number
+            FROM delivery_orders
+            WHERE DATE(created_at) = CURDATE()
+        ");
+
+        $next = str_pad((string) ($result[0]->next_number ?? 1), 4, '0', STR_PAD_LEFT);
+
+        return "DO-{$today}-{$next}";
+    }
+
     public function readyOrders(): array
     {
         return DB::select("
@@ -90,11 +419,30 @@ class LoadingService
             INNER JOIN packing_units pu ON li.packing_unit_id = pu.id
             INNER JOIN items i ON pu.item_id = i.id
             LEFT JOIN trolleys t ON li.trolley_id = t.id
-            LEFT JOIN fgw_racks r ON t.fgw_rack_id = r.id
+            LEFT JOIN fgw_racks r ON pu.fgw_rack_id = r.id
             LEFT JOIN users u ON li.loaded_by = u.id
             WHERE li.delivery_order_id = ?
             ORDER BY li.id DESC
         ", [$deliveryOrderId]);
+    }
+
+    public function getVehicles(): array
+    {
+        return DB::select("
+            SELECT id, vehicle_number, vehicle_type, driver_name
+            FROM master_vehicles
+            WHERE is_active = 1
+            ORDER BY vehicle_number ASC
+        ");
+    }
+
+    public function updateTruckOnDo(int $deliveryOrderId, string $truckNumber): void
+    {
+        DB::update("
+            UPDATE delivery_orders
+            SET truck_number = ?, updated_at = NOW()
+            WHERE id = ?
+        ", [trim($truckNumber), $deliveryOrderId]);
     }
 
     public function scanDusToTruck(int $deliveryOrderId, string $packingBarcode, int $userId): object
@@ -159,10 +507,6 @@ class LoadingService
         }
 
         $doItem = $doItem[0];
-
-        if ((int) $doItem->loaded_boxes >= (int) $doItem->required_boxes) {
-            throw new \Exception('Qty item ini sudah lengkap sesuai DO.');
-        }
 
         $alreadyLoaded = DB::select("
             SELECT id
@@ -250,12 +594,6 @@ class LoadingService
 
     public function completeLoading(int $deliveryOrderId, int $userId): void
     {
-        $validation = $this->validateCompleteness($deliveryOrderId);
-
-        if ((int) $validation->incomplete_rows > 0) {
-            throw new \Exception('Loading belum lengkap. Pastikan semua item telah dimuat.');
-        }
-
         DB::beginTransaction();
 
         try {
@@ -267,10 +605,38 @@ class LoadingService
                     loaded_by = ?,
                     updated_at = NOW()
                 WHERE id = ?
-            ", [
-                $userId,
-                $deliveryOrderId,
-            ]);
+            ", [$userId, $deliveryOrderId]);
+
+            // Cek apakah SO sudah fully shipped (semua PCS sudah terkirim)
+            $do = DB::select("
+                SELECT sales_order_id FROM delivery_orders WHERE id = ? LIMIT 1
+            ", [$deliveryOrderId]);
+
+            if ($do && $do[0]->sales_order_id) {
+                $soId = $do[0]->sales_order_id;
+
+                $check = DB::select("
+                    SELECT
+                        COALESCE(SUM(sod.qty), 0)                        as total_ordered_pcs,
+                        COALESCE((
+                            SELECT SUM(pu.qty)
+                            FROM loading_items li
+                            INNER JOIN packing_units pu ON li.packing_unit_id = pu.id
+                            INNER JOIN delivery_orders dox ON li.delivery_order_id = dox.id
+                            WHERE dox.sales_order_id = ?
+                        ), 0)                                             as total_loaded_pcs
+                    FROM sales_order_details sod
+                    WHERE sod.sales_order_id = ?
+                ", [$soId, $soId]);
+
+                if ($check && (int) $check[0]->total_loaded_pcs >= (int) $check[0]->total_ordered_pcs) {
+                    DB::update("
+                        UPDATE sales_orders
+                        SET status = 'SHIPPED', updated_at = NOW()
+                        WHERE id = ?
+                    ", [$soId]);
+                }
+            }
 
             DB::commit();
         } catch (\Exception $e) {
@@ -354,7 +720,7 @@ class LoadingService
             INNER JOIN packing_units pu ON li.packing_unit_id = pu.id
             INNER JOIN items i ON pu.item_id = i.id
             LEFT JOIN trolleys t ON li.trolley_id = t.id
-            LEFT JOIN fgw_racks r ON t.fgw_rack_id = r.id
+            LEFT JOIN fgw_racks r ON pu.fgw_rack_id = r.id
             WHERE li.delivery_order_id = ?
             ORDER BY li.id ASC
         ", [$deliveryOrderId]);

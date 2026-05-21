@@ -183,7 +183,7 @@
             <div class="header">
                 <div>
                     <h1>DELIVERY ORDER</h1>
-                    <div class="meta">Camiloplas Logistic</div>
+                    <div class="meta"> Logistic</div>
 
                     @if ($isDuplicate ?? false)
                         <div class="duplicate-label">REPRINT DOCUMENT / DUPLICATE</div>

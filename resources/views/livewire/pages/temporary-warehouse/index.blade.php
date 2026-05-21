@@ -382,7 +382,7 @@
             <div class="modal-content border-0 shadow rounded-4">
                 <div class="modal-header border-0 pb-0">
                     <div>
-                        <h5 class="modal-title fw-bold">Print Barcode Dus</h5>
+                        <h5 class="modal-title fw-bold">Print Barcode Code Product</h5>
                         <div class="text-muted small">Generate barcode berdasarkan SPK produksi.</div>
                     </div>
 
@@ -394,35 +394,75 @@
                         <div class="mb-3">
                             <label class="form-label fw-semibold">SPK Produksi</label>
 
-                            <select wire:model="productionOrderId" class="form-select rounded-3">
+                            <select wire:model="productionOrderId" class="form-select rounded-3 @error('productionOrderId') is-invalid @enderror">
                                 <option value="">Pilih SPK</option>
                                 @foreach ($productionOrders as $po)
                                     <option value="{{ $po->id }}">
-                                        {{ $po->spk_number }} - {{ $po->item_name }}
+                                        {{ $po->spk_number }} — {{ $po->item_name }}
+                                        @if ($po->so_number)
+                                            [{{ $po->so_number }}]
+                                        @endif
                                     </option>
                                 @endforeach
                             </select>
 
                             @error('productionOrderId')
-                                <small class="text-danger">{{ $message }}</small>
+                                <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Jumlah Barcode / Dus</label>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">Jumlah Dus</label>
+                                <input
+                                    type="number"
+                                    wire:model.live="totalBox"
+                                    class="form-control rounded-3 @error('totalBox') is-invalid @enderror"
+                                    min="1"
+                                    max="500"
+                                    placeholder="contoh: 10"
+                                >
+                                @error('totalBox')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
 
-                            <input
-                                type="number"
-                                wire:model="totalBox"
-                                class="form-control rounded-3"
-                                min="1"
-                                max="500"
-                            >
-
-                            @error('totalBox')
-                                <small class="text-danger">{{ $message }}</small>
-                            @enderror
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">
+                                    Qty per Dus
+                                    <span class="text-muted fw-normal small">(PCS)</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    wire:model.live="qtyPerBox"
+                                    class="form-control rounded-3 @error('qtyPerBox') is-invalid @enderror"
+                                    min="1"
+                                    max="100000"
+                                    placeholder="contoh: 1000"
+                                >
+                                @error('qtyPerBox')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
                         </div>
+
+                        {{-- Preview Kalkulasi --}}
+                        @if ($totalBox > 0 && $qtyPerBox > 0)
+                            <div class="rounded-3 bg-primary-subtle border border-primary-subtle p-3 small">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="text-muted">Jumlah barcode digenerate</span>
+                                    <span class="fw-semibold">{{ number_format($totalBox) }} dus</span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="text-muted">Isi per dus</span>
+                                    <span class="fw-semibold">{{ number_format($qtyPerBox) }} PCS</span>
+                                </div>
+                                <div class="border-top border-primary-subtle mt-2 pt-2 d-flex justify-content-between">
+                                    <span class="fw-semibold">Total PCS</span>
+                                    <span class="fw-bold text-primary">{{ number_format($totalBox * $qtyPerBox) }} PCS</span>
+                                </div>
+                            </div>
+                        @endif
                     </div>
 
                     <div class="modal-footer border-0 pt-0">

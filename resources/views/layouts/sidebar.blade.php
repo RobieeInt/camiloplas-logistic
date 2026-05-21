@@ -7,7 +7,7 @@
 
 <aside class="bg-dark text-white min-vh-100" style="width: 270px;">
     <div class="p-3 border-bottom border-secondary">
-        <h5 class="mb-0">Camiloplas Logistic</h5>
+        <h5 class="mb-0"> Logistic</h5>
         <small class="text-secondary">Warehouse Flow System</small>
     </div>
 

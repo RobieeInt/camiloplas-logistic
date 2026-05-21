@@ -32,9 +32,12 @@ class TemporaryWarehouseService
                 po.status,
                 i.item_code,
                 i.item_name,
-                i.uom
+                i.uom,
+                so.so_number,
+                so.customer_name as so_customer
             FROM production_orders po
             INNER JOIN items i ON po.item_id = i.id
+            LEFT JOIN sales_orders so ON po.sales_order_id = so.id
             ORDER BY po.production_date DESC, po.id DESC
         ");
     }
@@ -128,7 +131,7 @@ class TemporaryWarehouseService
         ");
     }
 
-    public function printBarcode(int $productionOrderId, int $totalBox, int $userId): string
+    public function printBarcode(int $productionOrderId, int $totalBox, int $qtyPerBox, int $userId): string
     {
         $poResult = DB::select("
             SELECT
@@ -170,13 +173,14 @@ class TemporaryWarehouseService
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, 1000, ?, NOW(), ?, 'PRINTED', NOW(), NOW())
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'PRINTED', NOW(), NOW())
                 ", [
                     $productionOrderId,
                     $po->item_id,
                     'BOX ' . str_pad($i, 3, '0', STR_PAD_LEFT) . '-' . $running,
                     (string) $running,
                     $batchId,
+                    $qtyPerBox,
                     $po->uom ?? 'PCS',
                     $userId,
                 ]);

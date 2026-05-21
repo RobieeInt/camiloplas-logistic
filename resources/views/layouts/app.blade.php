@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Camiloplas Logistic</title>
+    <title> Logistic</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     @vite(['resources/scss/app.scss', 'resources/js/app.js'])

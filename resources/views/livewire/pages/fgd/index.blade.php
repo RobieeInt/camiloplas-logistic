@@ -40,6 +40,44 @@
         </div>
     @endif
 
+
+
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4">
+            <h5 class="fw-bold mb-1">Scan Troli</h5>
+            <div class="text-muted small">
+                Scan barcode / QR troli dari Temporary Warehouse.
+            </div>
+        </div>
+
+        <div class="card-body px-4 pb-4">
+            <form wire:submit.prevent="scanTrolley">
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-10">
+                        <label class="form-label fw-semibold">Barcode Troli</label>
+
+                        <input
+                            type="text"
+                            id="fgwTrolleyInput"
+                            wire:model.defer="trolleyBarcode"
+                            class="form-control form-control-lg rounded-3"
+                            placeholder="Scan barcode troli"
+                            autocomplete="off"
+                            autofocus
+                        >
+                    </div>
+
+                    <div class="col-lg-2 d-grid">
+                        <button class="btn btn-primary btn-lg rounded-3">
+                            <i class="bi bi-upc-scan me-1"></i>
+                            Scan
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="row g-3 mb-4 fgd-summary">
         <div class="col-12 col-md-4">
             <div class="card border-0 shadow-sm rounded-4">
@@ -128,39 +166,78 @@
         </div>
     </div>
 
-    <div class="card border-0 shadow-sm rounded-4 mb-4">
-        <div class="card-header bg-white border-0 pt-4 px-4">
-            <h5 class="fw-bold mb-1">Scan Troli</h5>
-            <div class="text-muted small">
-                Scan barcode / QR troli dari Temporary Warehouse.
-            </div>
+    {{-- Stok Item per RAK --}}
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4 pb-3">
+            <h5 class="fw-bold mb-1">Stok Item di FGW</h5>
+            <div class="text-muted small">Detail dus per item dan lokasinya di RAK.</div>
         </div>
 
-        <div class="card-body px-4 pb-4">
-            <form wire:submit.prevent="scanTrolley">
-                <div class="row g-3 align-items-end">
-                    <div class="col-lg-10">
-                        <label class="form-label fw-semibold">Barcode Troli</label>
-
-                        <input
-                            type="text"
-                            id="fgwTrolleyInput"
-                            wire:model.defer="trolleyBarcode"
-                            class="form-control form-control-lg rounded-3"
-                            placeholder="Scan barcode troli"
-                            autocomplete="off"
-                            autofocus
-                        >
-                    </div>
-
-                    <div class="col-lg-2 d-grid">
-                        <button class="btn btn-primary btn-lg rounded-3">
-                            <i class="bi bi-upc-scan me-1"></i>
-                            Scan
-                        </button>
-                    </div>
-                </div>
-            </form>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 fgd-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Item</th>
+                        <th>RAK</th>
+                        <th class="text-end">Dus</th>
+                        <th class="text-end">Total PCS</th>
+                        <th class="text-end pe-4">Isi / Dus</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @php $lastItemId = null; @endphp
+                    @forelse ($stockByItem as $row)
+                        <tr>
+                            <td class="ps-4">
+                                @if ($lastItemId !== $row->item_id)
+                                    <div class="fw-semibold">{{ $row->item_name }}</div>
+                                    <small class="text-muted">{{ $row->item_code }}</small>
+                                @else
+                                    <span class="text-muted small">↳</span>
+                                @endif
+                                @php $lastItemId = $row->item_id; @endphp
+                            </td>
+                            <td>
+                                <span class="badge rounded-pill text-bg-primary-subtle border border-primary-subtle text-primary-emphasis fw-semibold">
+                                    {{ $row->rack_code }}
+                                </span>
+                                @if ($row->rack_name !== '—')
+                                    <small class="text-muted ms-1">{{ $row->rack_name }}</small>
+                                @endif
+                            </td>
+                            <td class="text-end fw-bold">{{ number_format($row->total_dus) }}</td>
+                            <td class="text-end">
+                                <span class="fw-semibold">{{ number_format($row->total_pcs) }}</span>
+                                <small class="text-muted ms-1">PCS</small>
+                            </td>
+                            <td class="text-end pe-4 text-muted">
+                                {{ $row->qty_per_box ? number_format($row->qty_per_box) . ' PCS' : '—' }}
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                Belum ada stok di FGW.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+                @if (count($stockByItem) > 0)
+                    @php
+                        $totalDusAll = collect($stockByItem)->sum('total_dus');
+                        $totalPcsAll = collect($stockByItem)->sum('total_pcs');
+                    @endphp
+                    <tfoot class="table-light border-top">
+                        <tr>
+                            <td class="ps-4 fw-bold" colspan="2">Total</td>
+                            <td class="text-end fw-bold">{{ number_format($totalDusAll) }}</td>
+                            <td class="text-end fw-bold">{{ number_format($totalPcsAll) }} <small class="fw-normal text-muted">PCS</small></td>
+                            <td class="pe-4"></td>
+                        </tr>
+                    </tfoot>
+                @endif
+            </table>
         </div>
     </div>
 

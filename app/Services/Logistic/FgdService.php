@@ -119,8 +119,20 @@ class FgdService
         ];
     }
 
+    private function resolveBarcode(string $raw): string
+    {
+        $raw = trim($raw);
+        if (str_contains($raw, ',')) {
+            $parts = explode(',', $raw);
+            return trim(end($parts));
+        }
+        return $raw;
+    }
+
     public function validateDusInTrolley(int $trolleyId, string $packingBarcode): object
     {
+        $packingBarcode = $this->resolveBarcode($packingBarcode);
+
         $result = DB::select("
             SELECT
                 pu.id,

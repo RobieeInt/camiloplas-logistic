@@ -127,7 +127,7 @@ class LoadingService
         $placeholders = implode(',', array_fill(0, count($soIds), '?'));
 
         $sos = DB::select("
-            SELECT id, so_number, customer_name
+            SELECT id, so_number, customer_name, customer_address, customer_po_number
             FROM sales_orders
             WHERE id IN ($placeholders)
             AND status = 'OPEN'
@@ -160,9 +160,10 @@ class LoadingService
             throw new \Exception('SO yang dipilih belum memiliki detail item.');
         }
 
-        $soNumbers     = implode(' / ', array_map(fn ($s) => $s->so_number, $sos));
-        $customerNames = array_unique(array_map(fn ($s) => $s->customer_name, $sos));
-        $customerName  = implode(' / ', $customerNames);
+        $soNumbers       = implode(' / ', array_map(fn ($s) => $s->so_number, $sos));
+        $customerNames   = array_unique(array_map(fn ($s) => $s->customer_name, $sos));
+        $customerName    = implode(' / ', $customerNames);
+        $customerAddress = $sos[0]->customer_address ?? '';
 
         DB::beginTransaction();
 
@@ -173,19 +174,22 @@ class LoadingService
                     so_number,
                     do_number,
                     customer_name,
+                    customer_address,
                     truck_number,
+                    driver_name,
                     status,
                     do_print_count,
                     surat_jalan_print_count,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, NULL, 'READY', 0, 0, NOW(), NOW())
+                VALUES (?, ?, ?, ?, ?, NULL, NULL, 'READY', 0, 0, NOW(), NOW())
             ", [
-                $sos[0]->id,   // first SO's ID
+                $sos[0]->id,
                 $soNumbers,
                 $doNumber,
                 $customerName,
+                $customerAddress,
             ]);
 
             $doId = (int) DB::getPdo()->lastInsertId();
@@ -289,19 +293,22 @@ class LoadingService
                     so_number,
                     do_number,
                     customer_name,
+                    customer_address,
                     truck_number,
+                    driver_name,
                     status,
                     do_print_count,
                     surat_jalan_print_count,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, NULL, 'READY', 0, 0, NOW(), NOW())
+                VALUES (?, ?, ?, ?, ?, NULL, NULL, 'READY', 0, 0, NOW(), NOW())
             ", [
                 $soId,
                 $so->so_number,
                 $doNumber,
                 $so->customer_name,
+                $so->customer_address ?? '',
             ]);
 
             $doId = (int) DB::getPdo()->lastInsertId();
@@ -436,17 +443,29 @@ class LoadingService
         ");
     }
 
-    public function updateTruckOnDo(int $deliveryOrderId, string $truckNumber): void
+    public function updateTruckOnDo(int $deliveryOrderId, string $truckNumber, string $driverName = ''): void
     {
         DB::update("
             UPDATE delivery_orders
-            SET truck_number = ?, updated_at = NOW()
+            SET truck_number = ?, driver_name = ?, updated_at = NOW()
             WHERE id = ?
-        ", [trim($truckNumber), $deliveryOrderId]);
+        ", [trim($truckNumber), trim($driverName), $deliveryOrderId]);
+    }
+
+    private function resolveBarcode(string $raw): string
+    {
+        $raw = trim($raw);
+        if (str_contains($raw, ',')) {
+            $parts = explode(',', $raw);
+            return trim(end($parts));
+        }
+        return $raw;
     }
 
     public function scanDusToTruck(int $deliveryOrderId, string $packingBarcode, int $userId): object
     {
+        $packingBarcode = $this->resolveBarcode($packingBarcode);
+
         $order = DB::select("
             SELECT *
             FROM delivery_orders
@@ -682,9 +701,11 @@ class LoadingService
         $order = DB::select("
             SELECT
                 dox.*,
-                u.name as loaded_by_name
+                u.name as loaded_by_name,
+                so.customer_po_number
             FROM delivery_orders dox
             LEFT JOIN users u ON dox.loaded_by = u.id
+            LEFT JOIN sales_orders so ON dox.sales_order_id = so.id
             WHERE dox.id = ?
             LIMIT 1
         ", [$deliveryOrderId]);

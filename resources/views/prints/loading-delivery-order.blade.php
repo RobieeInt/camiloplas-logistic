@@ -192,16 +192,17 @@
 
                 <div class="meta">
                     <div><strong>DO:</strong> {{ $order->do_number }}</div>
-                    <div><strong>SO:</strong> {{ $order->so_number }}</div>
-                    <div><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($order->loaded_at)->format('d/m/Y') }}</div>
+                    <div><strong>PO Customer:</strong> {{ $order->customer_po_number ?? '-' }}</div>
+                    <div><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($order->loaded_at)->format('d/m/Y H:i') }}</div>
                     <div><strong>Print Count:</strong> {{ ($order->do_print_count ?? 0) + 1 }}</div>
                 </div>
             </div>
 
             <div class="meta">
                 <div><strong>Customer:</strong> {{ $order->customer_name }}</div>
+                <div><strong>Alamat:</strong> {{ $order->customer_address ?? '-' }}</div>
                 <div><strong>No Truck:</strong> {{ $order->truck_number ?? '-' }}</div>
-                <div><strong>Status:</strong> {{ $order->status }}</div>
+                <div><strong>Driver:</strong> {{ $order->driver_name ?? '-' }}</div>
                 <div><strong>Loaded By:</strong> {{ $order->loaded_by_name ?? '-' }}</div>
             </div>
 

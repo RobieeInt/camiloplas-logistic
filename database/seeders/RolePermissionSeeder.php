@@ -33,6 +33,9 @@ class RolePermissionSeeder extends Seeder
             'temporary-warehouse.view',
             'temporary-warehouse.scan',
 
+            'temporary-warehouse-qc.view',
+            'temporary-warehouse-qc.scan',
+
             'fgd.view',
             'fgd.scan',
 
@@ -63,6 +66,11 @@ class RolePermissionSeeder extends Seeder
             'guard_name' => 'web',
         ]);
 
+        $warehouseQc = Role::firstOrCreate([
+            'name' => 'Temporary Warehouse QC',
+            'guard_name' => 'web',
+        ]);
+
         $fgd = Role::firstOrCreate([
             'name' => 'FGD',
             'guard_name' => 'web',
@@ -81,6 +89,12 @@ class RolePermissionSeeder extends Seeder
             'temporary-warehouse.scan',
         ]);
 
+        $warehouseQc->syncPermissions([
+            'dashboard.view',
+            'temporary-warehouse-qc.view',
+            'temporary-warehouse-qc.scan',
+        ]);
+
         $fgd->syncPermissions([
             'dashboard.view',
             'fgd.view',
@@ -97,6 +111,7 @@ class RolePermissionSeeder extends Seeder
         $adminLogistic->syncPermissions([
             'dashboard.view',
             'temporary-warehouse.view',
+            'temporary-warehouse-qc.view',
             'fgd.view',
             'loading.view',
             'loading.print-document',

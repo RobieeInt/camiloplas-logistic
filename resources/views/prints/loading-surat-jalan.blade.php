@@ -143,13 +143,15 @@
             <div>
                 <div><strong>No Surat Jalan:</strong> SJ-{{ $order->do_number }}</div>
                 <div><strong>No DO:</strong> {{ $order->do_number }}</div>
-                <div><strong>No SO:</strong> {{ $order->so_number }}</div>
+                <div><strong>PO Customer:</strong> {{ $order->customer_po_number ?? '-' }}</div>
+                <div><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($order->loaded_at)->format('d/m/Y H:i') }}</div>
             </div>
 
             <div>
-                <div><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($order->loaded_at)->format('d/m/Y') }}</div>
                 <div><strong>Customer:</strong> {{ $order->customer_name }}</div>
+                <div><strong>Alamat:</strong> {{ $order->customer_address ?? '-' }}</div>
                 <div><strong>No Truck:</strong> {{ $order->truck_number ?? '-' }}</div>
+                <div><strong>Driver:</strong> {{ $order->driver_name ?? '-' }}</div>
             </div>
         </div>
 

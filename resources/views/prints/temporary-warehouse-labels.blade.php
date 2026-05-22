@@ -189,7 +189,7 @@
                         <svg
     class="barcode"
     jsbarcode-format="CODE128"
-    jsbarcode-value="{{ $label->barcode }}"
+    jsbarcode-value="{{ $label->item_code }}{{ $label->barcode }}"
     jsbarcode-textmargin="0"
     jsbarcode-fontoptions="bold"
     jsbarcode-height="32"
@@ -199,7 +199,7 @@
 ></svg>
 
                         <div class="barcode-number">
-                            {{ $label->barcode }}
+                            {{ $label->item_code }}{{ $label->barcode }}
                         </div>
                     </div>
                 </div>

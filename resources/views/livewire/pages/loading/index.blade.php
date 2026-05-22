@@ -597,6 +597,23 @@
                                         @enderror
                                     </div>
                                 </div>
+
+                                <div class="mt-3">
+                                    <label class="form-label small text-muted mb-1">
+                                        Nama Driver
+                                        <span class="badge text-bg-danger rounded-pill ms-1" style="font-size:.7rem;">Wajib</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        wire:model="driverName"
+                                        class="form-control rounded-3 @error('driverName') is-invalid @enderror"
+                                        placeholder="cth: Budi Santoso"
+                                        autocomplete="off"
+                                    >
+                                    @error('driverName')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
                             </div>
                         @endif
 

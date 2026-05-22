@@ -11,14 +11,24 @@ class TemporaryWarehouseService
     {
         $result = DB::select("
             SELECT
-                (SELECT COUNT(*) FROM packing_units WHERE DATE(created_at) = CURDATE()) as total_printed_today,
-                (SELECT COUNT(*) FROM packing_units WHERE status = 'PRINTED') as total_ready_scan,
-                (SELECT COUNT(*) FROM trolleys WHERE status = 'OPEN') as total_open_trolley,
-                (SELECT COUNT(*) FROM trolleys WHERE status = 'COMPLETE') as total_complete_trolley,
-                (SELECT COUNT(*) FROM trolleys WHERE status = 'SENT_FGW') as total_sent_fgw
+                (SELECT COUNT(*) FROM packing_units WHERE DATE(created_at) = CURDATE())     as total_printed_today,
+                (SELECT COUNT(*) FROM packing_units WHERE status = 'PRINTED')               as total_ready_scan,
+                (SELECT COUNT(*) FROM packing_units WHERE status = 'TW_SCANNED')            as total_tw_scanned,
+                (SELECT COUNT(*) FROM trolleys WHERE status = 'OPEN')                       as total_open_trolley,
+                (SELECT COUNT(*) FROM trolleys WHERE status = 'COMPLETE')                   as total_complete_trolley,
+                (SELECT COUNT(*) FROM trolleys WHERE status = 'SENT_FGW')                   as total_sent_fgw
         ");
 
         return $result[0];
+    }
+
+    public function getItems(): array
+    {
+        return DB::select("
+            SELECT id, item_code, item_name, uom
+            FROM items
+            ORDER BY item_code ASC
+        ");
     }
 
     public function getProductionOrders(): array
@@ -88,14 +98,19 @@ class TemporaryWarehouseService
                 pu.qty,
                 pu.uom,
                 pu.printed_at,
+                pu.prod_scanned_at,
                 pu.status,
                 po.spk_number,
                 po.production_date,
                 i.item_code,
-                i.item_name
+                i.item_name,
+                u_print.name  as printed_by_name,
+                u_scan.name   as prod_scanned_by_name
             FROM packing_units pu
             INNER JOIN production_orders po ON pu.production_order_id = po.id
             INNER JOIN items i ON pu.item_id = i.id
+            LEFT JOIN users u_print ON pu.printed_by = u_print.id
+            LEFT JOIN users u_scan  ON pu.prod_scanned_by = u_scan.id
             WHERE 1=1
             {$searchQuery}
             ORDER BY pu.id DESC
@@ -117,8 +132,12 @@ class TemporaryWarehouseService
                 t.barcode,
                 t.capacity,
                 t.status,
+                t.item_id,
+                i.item_code,
+                i.item_name,
                 COUNT(ti.id) as total_items
             FROM trolleys t
+            LEFT JOIN items i ON t.item_id = i.id
             LEFT JOIN trolley_items ti ON t.id = ti.trolley_id
             WHERE t.status IN ('OPEN', 'COMPLETE')
             GROUP BY
@@ -126,7 +145,10 @@ class TemporaryWarehouseService
                 t.trolley_code,
                 t.barcode,
                 t.capacity,
-                t.status
+                t.status,
+                t.item_id,
+                i.item_code,
+                i.item_name
             ORDER BY t.id DESC
         ");
     }
@@ -193,6 +215,60 @@ class TemporaryWarehouseService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    private function resolveBarcode(string $raw): string
+    {
+        $raw = trim($raw);
+        // Format baru: "ITEM-CODE,12345678" → ambil bagian setelah koma terakhir
+        if (str_contains($raw, ',')) {
+            $parts = explode(',', $raw);
+            return trim(end($parts));
+        }
+        return $raw;
+    }
+
+    public function scanProdBarcode(string $barcode, int $userId): object
+    {
+        $barcode = $this->resolveBarcode($barcode);
+
+        $packing = DB::select("
+            SELECT pu.*, i.item_name, i.item_code
+            FROM packing_units pu
+            INNER JOIN items i ON pu.item_id = i.id
+            WHERE pu.barcode = ?
+            LIMIT 1
+        ", [$barcode]);
+
+        if (!$packing) {
+            throw new \Exception('Barcode tidak ditemukan.');
+        }
+
+        $packing = $packing[0];
+
+        if ($packing->status !== 'PRINTED') {
+            if ($packing->status === 'TW_SCANNED') {
+                throw new \Exception('Dus ini sudah pernah di-scan di TW. Status: TW_SCANNED.');
+            }
+            throw new \Exception('Dus tidak bisa di-scan. Status sekarang: ' . $packing->status);
+        }
+
+        DB::update("
+            UPDATE packing_units
+            SET
+                status          = 'TW_SCANNED',
+                prod_scanned_by = ?,
+                prod_scanned_at = NOW(),
+                updated_at      = NOW()
+            WHERE id = ?
+        ", [$userId, $packing->id]);
+
+        return (object) [
+            'barcode'    => $packing->barcode,
+            'box_number' => $packing->box_number,
+            'item_name'  => $packing->item_name,
+            'item_code'  => $packing->item_code,
+        ];
     }
 
     public function getPrintLabels(string $batchId): array
@@ -279,8 +355,15 @@ class TemporaryWarehouseService
         return (int) $last + 1;
     }
 
-    public function createTrolley(int $userId, $capacity): int
+    public function createTrolley(int $userId, $capacity, ?int $itemId = null): int
     {
+        if ($itemId !== null) {
+            $item = DB::select("SELECT id FROM items WHERE id = ? LIMIT 1", [$itemId]);
+            if (!$item) {
+                throw new \Exception('Item tidak ditemukan.');
+            }
+        }
+
         $today = now()->format('Ymd');
 
         $result = DB::select("
@@ -299,18 +382,22 @@ class TemporaryWarehouseService
         try {
             DB::insert("
                 INSERT INTO trolleys (
+                    item_id,
                     trolley_code,
                     barcode,
                     capacity,
                     status,
+                    created_by,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, 'OPEN', NOW(), NOW())
+                VALUES (?, ?, ?, ?, 'OPEN', ?, NOW(), NOW())
             ", [
+                $itemId,
                 $trolleyCode,
                 $barcode,
-                $capacity
+                $capacity,
+                $userId,
             ]);
 
             $trolleyId = (int) DB::getPdo()->lastInsertId();
@@ -324,7 +411,7 @@ class TemporaryWarehouseService
                     created_at,
                     updated_at
                 )
-                VALUES (?, 'OPEN', 'Troli dibuat dari Temporary Warehouse', ?, NOW(), NOW())
+                VALUES (?, 'OPEN', 'Troli dibuat dari Temporary Warehouse QC', ?, NOW(), NOW())
             ", [
                 $trolleyId,
                 $userId,
@@ -341,10 +428,13 @@ class TemporaryWarehouseService
 
     public function scanDusToSelectedTrolley(string $packingBarcode, int $trolleyId, int $userId): object
     {
+        $packingBarcode = $this->resolveBarcode($packingBarcode);
+
         $packing = DB::select("
-            SELECT *
-            FROM packing_units
-            WHERE barcode = ?
+            SELECT pu.*, i.item_name as packing_item_name
+            FROM packing_units pu
+            INNER JOIN items i ON pu.item_id = i.id
+            WHERE pu.barcode = ?
             LIMIT 1
         ", [$packingBarcode]);
 
@@ -354,14 +444,18 @@ class TemporaryWarehouseService
 
         $packing = $packing[0];
 
-        if ($packing->status !== 'PRINTED') {
-            throw new \Exception('Dus ini sudah pernah diproses. Status sekarang: ' . $packing->status);
+        if ($packing->status !== 'TW_SCANNED') {
+            if ($packing->status === 'PRINTED') {
+                throw new \Exception('Dus belum di-scan di Temporary Warehouse. Scan dulu di halaman TW sebelum masuk troli.');
+            }
+            throw new \Exception('Dus tidak bisa dimasukkan ke troli. Status sekarang: ' . $packing->status);
         }
 
         $trolley = DB::select("
-            SELECT *
-            FROM trolleys
-            WHERE id = ?
+            SELECT t.*, i.item_name as trolley_item_name
+            FROM trolleys t
+            LEFT JOIN items i ON t.item_id = i.id
+            WHERE t.id = ?
             LIMIT 1
         ", [$trolleyId]);
 
@@ -373,6 +467,13 @@ class TemporaryWarehouseService
 
         if ($trolley->status !== 'OPEN') {
             throw new \Exception('Troli tidak dalam status OPEN.');
+        }
+
+        if ($trolley->item_id !== null && (int) $packing->item_id !== (int) $trolley->item_id) {
+            throw new \Exception(
+                'Item tidak cocok! Dus ini adalah ' . $packing->packing_item_name .
+                ', troli ini khusus untuk ' . $trolley->trolley_item_name . '.'
+            );
         }
 
         $count = DB::select("
@@ -569,7 +670,7 @@ class TemporaryWarehouseService
             DB::update("
                 UPDATE packing_units
                 SET
-                    status = 'PRINTED',
+                    status = 'TW_SCANNED',
                     updated_at = NOW()
                 WHERE id = ?
             ", [$packingUnitId]);

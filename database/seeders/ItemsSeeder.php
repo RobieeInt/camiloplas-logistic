@@ -14,7 +14,7 @@ class ItemsSeeder extends Seeder
         DB::table('items')->insert([
             [
                 'id'         => 1,
-                'item_code'  => '07400-149',
+                'item_code'  => '149',
                 'item_name'  => '10OZ MCFLURRY CUP PIE ALA MODE NEW',
                 'uom'        => 'PCS',
                 'created_at' => now(),
@@ -22,7 +22,7 @@ class ItemsSeeder extends Seeder
             ],
             [
                 'id'         => 2,
-                'item_code'  => '07400-150',
+                'item_code'  => '150',
                 'item_name'  => '16OZ CLEAR COLD DRINK CUP',
                 'uom'        => 'PCS',
                 'created_at' => now(),
@@ -30,7 +30,7 @@ class ItemsSeeder extends Seeder
             ],
             [
                 'id'         => 3,
-                'item_code'  => '07500-201',
+                'item_code'  => '201',
                 'item_name'  => 'SOUP BOWL 22OZ WITH LID',
                 'uom'        => 'PCS',
                 'created_at' => now(),

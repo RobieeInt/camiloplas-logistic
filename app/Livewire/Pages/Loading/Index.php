@@ -18,6 +18,7 @@ class Index extends Component
 
     public string $packingBarcode = '';
     public string $truckNumber = '';
+    public string $driverName = '';
     public ?int $selectedVehicleId = null;
 
     // ── Buat DO modal ────────────────────────────
@@ -151,6 +152,7 @@ class Index extends Component
             $this->loadedItems     = $service->loadedItems($deliveryOrderId);
             $this->packingBarcode  = '';
             $this->truckNumber     = $data['order']->truck_number ?? '';
+            $this->driverName      = $data['order']->driver_name ?? '';
             $this->selectedVehicleId = null;
             $this->showLoadingModal = true;
 
@@ -168,6 +170,7 @@ class Index extends Component
         if ($vehicle) {
             $this->selectedVehicleId = $vehicleId;
             $this->truckNumber = $vehicle->vehicle_number;
+            $this->driverName  = $vehicle->driver_name ?? '';
         }
     }
 
@@ -209,9 +212,12 @@ class Index extends Component
     {
         $this->validate([
             'truckNumber' => ['required', 'string', 'min:3'],
+            'driverName'  => ['required', 'string', 'min:2'],
         ], [
             'truckNumber.required' => 'No. Polisi truck wajib diisi sebelum complete loading.',
             'truckNumber.min'      => 'No. Polisi terlalu pendek.',
+            'driverName.required'  => 'Nama driver wajib diisi sebelum complete loading.',
+            'driverName.min'       => 'Nama driver terlalu pendek.',
         ]);
 
         try {
@@ -219,7 +225,7 @@ class Index extends Component
                 throw new \Exception('DO belum dipilih.');
             }
 
-            $service->updateTruckOnDo($this->selectedOrder->id, $this->truckNumber);
+            $service->updateTruckOnDo($this->selectedOrder->id, $this->truckNumber, $this->driverName);
             $service->completeLoading($this->selectedOrder->id, auth()->id());
 
             session()->flash('success', 'Loading complete. Dokumen siap dicetak.');
@@ -241,6 +247,7 @@ class Index extends Component
             'loadedItems',
             'packingBarcode',
             'truckNumber',
+            'driverName',
             'selectedVehicleId',
         ]);
 

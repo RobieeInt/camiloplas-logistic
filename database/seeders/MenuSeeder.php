@@ -69,11 +69,20 @@ class MenuSeeder extends Seeder
 
         Menu::create([
             'parent_id' => $logistic->id,
+            'name' => 'TW Quality Control',
+            'route' => 'temporary-warehouse-qc.index',
+            'icon' => 'bi bi-clipboard-check',
+            'permission_name' => 'temporary-warehouse-qc.view',
+            'sort_order' => 2,
+        ]);
+
+        Menu::create([
+            'parent_id' => $logistic->id,
             'name' => 'FGW',
             'route' => 'fgd.index',
             'icon' => 'bi bi-qr-code-scan',
             'permission_name' => 'fgd.view',
-            'sort_order' => 2,
+            'sort_order' => 3,
         ]);
 
         Menu::create([
@@ -82,7 +91,7 @@ class MenuSeeder extends Seeder
             'route' => 'loading.index',
             'icon' => 'bi bi-truck-front',
             'permission_name' => 'loading.view',
-            'sort_order' => 3,
+            'sort_order' => 4,
         ]);
     }
 }

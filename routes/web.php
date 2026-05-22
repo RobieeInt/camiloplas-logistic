@@ -9,6 +9,7 @@ use App\Livewire\Pages\Loading\Index as LoadingIndex;
 use App\Livewire\Pages\Menus\Index as MenuIndex;
 use App\Livewire\Pages\Roles\Index as RoleIndex;
 use App\Livewire\Pages\TemporaryWarehouse\Index as TemporaryWarehouseIndex;
+use App\Livewire\Pages\TemporaryWarehouseQc\Index as TemporaryWarehouseQcIndex;
 use App\Livewire\Pages\Users\Index as UserIndex;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +50,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/temporary-warehouse', TemporaryWarehouseIndex::class)
         ->name('temporary-warehouse.index')
         ->middleware('permission:temporary-warehouse.view');
+
+    Route::get('/temporary-warehouse-qc', TemporaryWarehouseQcIndex::class)
+        ->name('temporary-warehouse-qc.index')
+        ->middleware('permission:temporary-warehouse-qc.view');
 
     Route::get('/temporary-warehouse/print-labels', [TemporaryWarehousePrintController::class, 'labels'])
         ->name('temporary-warehouse.print-labels')

@@ -16,29 +16,22 @@ class Index extends Component
 
     public string $search = '';
 
+    // Print modal
     public bool $showPrintModal = false;
-    public bool $showScanModal = false;
-    public bool $showTrolleyDetailModal = false;
-
     public ?int $productionOrderId = null;
     public int $totalBox = 1;
     public int $qtyPerBox = 1000;
 
-    public ?int $selectedTrolleyId = null;
-    public string $selectedTrolleyCode = '';
-    public string $selectedTrolleyBarcode = '';
-    public ?int $selectedTrolleyCapacity = null;
-    public int $selectedTrolleyTotalItems = 0;
-
-    public string $packingBarcode = '';
-
-    public ?object $detailTrolley = null;
-    public array $detailTrolleyItems = [];
+    // Scan modal (TW first scan)
+    public bool $showScanModal = false;
+    public string $twScanBarcode = '';
 
     public function updatingSearch(): void
     {
         $this->resetPage();
     }
+
+    // ── Print ────────────────────────────────────────
 
     public function openPrintModal(): void
     {
@@ -87,167 +80,60 @@ class Index extends Component
         }
     }
 
-    public function createTrolley(TemporaryWarehouseService $service): void
+    // ── Scan Produksi (TW first scan) ────────────────
+
+    public function openScanModal(): void
     {
-        try {
-            $capacity = null;
-            $service->createTrolley(auth()->id(), $capacity);
-            session()->flash('success', 'Troli baru berhasil dibuat.');
-        } catch (\Exception $e) {
-            session()->flash('error', $e->getMessage());
-        }
-    }
-
-    public function openScanModal(
-        int $trolleyId,
-        string $trolleyCode,
-        string $trolleyBarcode,
-        ?int $capacity,
-        int $totalItems
-    ): void {
-        $this->selectedTrolleyId = $trolleyId;
-        $this->selectedTrolleyCode = $trolleyCode;
-        $this->selectedTrolleyBarcode = $trolleyBarcode;
-        $this->selectedTrolleyCapacity = $capacity;
-        $this->selectedTrolleyTotalItems = $totalItems;
-        $this->packingBarcode = '';
-
+        $this->twScanBarcode = '';
         $this->showScanModal = true;
         $this->resetValidation();
-
-        $this->dispatch('scan-modal-opened');
+        $this->dispatch('tw-scan-modal-opened');
     }
 
     public function closeScanModal(): void
     {
         $this->showScanModal = false;
-
-        $this->reset([
-            'selectedTrolleyId',
-            'selectedTrolleyCode',
-            'selectedTrolleyBarcode',
-            'selectedTrolleyCapacity',
-            'selectedTrolleyTotalItems',
-            'packingBarcode',
-        ]);
-
-        // $this->selectedTrolleyCapacity = 3;
+        $this->twScanBarcode = '';
         $this->resetValidation();
-
-        $this->dispatch('scan-modal-closed');
+        $this->dispatch('tw-scan-modal-closed');
     }
 
-    public function scanDus(TemporaryWarehouseService $service): void
+    public function scanProd(TemporaryWarehouseService $service): void
     {
         $this->validate([
-            'selectedTrolleyId' => ['required', 'integer'],
-            'packingBarcode' => ['required', 'string'],
+            'twScanBarcode' => ['required', 'string'],
         ]);
 
         try {
-            $result = $service->scanDusToSelectedTrolley(
-                packingBarcode: trim($this->packingBarcode),
-                trolleyId: $this->selectedTrolleyId,
+            $result = $service->scanProdBarcode(
+                barcode: trim($this->twScanBarcode),
                 userId: auth()->id()
             );
 
-            $this->packingBarcode = '';
-            $this->selectedTrolleyTotalItems = $result->total_items;
-            $this->selectedTrolleyCapacity = $result->capacity;
+            $this->twScanBarcode = '';
 
             session()->flash(
-                'scan_success',
-                "Dus {$result->packing_barcode} berhasil masuk ke {$result->trolley_code}. Isi troli: {$result->total_items}/" . ($result->capacity ?? '∞')
+                'tw_scan_success',
+                "Scan berhasil: {$result->box_number} ({$result->item_name}) → status TW_SCANNED."
             );
 
-            if ($result->status === 'COMPLETE') {
-                $this->showScanModal = false;
-                $this->dispatch('scan-modal-closed');
-                session()->flash('success', 'Troli sudah COMPLETE.');
-                return;
-            }
-
-            $this->dispatch('scan-ready-again');
+            $this->dispatch('tw-scan-ready-again');
         } catch (\Exception $e) {
-            session()->flash('scan_error', $e->getMessage());
-            $this->dispatch('scan-ready-again');
-        }
-    }
-
-    public function openTrolleyDetailModal(int $trolleyId, TemporaryWarehouseService $service): void
-    {
-        try {
-            $data = $service->getTrolleyDetail($trolleyId);
-
-            $this->detailTrolley = $data['trolley'];
-            $this->detailTrolleyItems = $data['items'];
-
-            $this->showTrolleyDetailModal = true;
-        } catch (\Exception $e) {
-            session()->flash('error', $e->getMessage());
-        }
-    }
-
-    public function closeTrolleyDetailModal(): void
-    {
-        $this->showTrolleyDetailModal = false;
-        $this->detailTrolley = null;
-        $this->detailTrolleyItems = [];
-    }
-
-    public function removeDusFromTrolley(
-        int $trolleyId,
-        int $packingUnitId,
-        TemporaryWarehouseService $service
-    ): void {
-        try {
-            $service->removeDusFromTrolley(
-                trolleyId: $trolleyId,
-                packingUnitId: $packingUnitId,
-                userId: auth()->id()
-            );
-
-            $data = $service->getTrolleyDetail($trolleyId);
-            $this->detailTrolley = $data['trolley'];
-            $this->detailTrolleyItems = $data['items'];
-
-            session()->flash('detail_success', 'Dus berhasil dikeluarkan dari troli.');
-        } catch (\Exception $e) {
-            session()->flash('detail_error', $e->getMessage());
-        }
-    }
-
-    public function forceCompleteTrolley(int $trolleyId, TemporaryWarehouseService $service): void
-    {
-        try {
-            $service->forceCompleteTrolley($trolleyId, auth()->id());
-            session()->flash('success', 'Troli berhasil di-force complete.');
-        } catch (\Exception $e) {
-            session()->flash('error', $e->getMessage());
-        }
-    }
-
-    public function sendToFgw(int $trolleyId, TemporaryWarehouseService $service): void
-    {
-        try {
-            $service->sendToFgw($trolleyId, auth()->id());
-            session()->flash('success', 'Troli berhasil dikirim ke FGW.');
-        } catch (\Exception $e) {
-            session()->flash('error', $e->getMessage());
+            $this->twScanBarcode = '';
+            session()->flash('tw_scan_error', $e->getMessage());
+            $this->dispatch('tw-scan-ready-again');
         }
     }
 
     public function render(TemporaryWarehouseService $service)
     {
-        // dd($service->getOpenTrolleys());
         return view('livewire.pages.temporary-warehouse.index', [
-            'summary' => $service->summary(),
+            'summary'          => $service->summary(),
             'productionOrders' => $service->getProductionOrders(),
-            'packingUnits' => $service->getPackingUnits(
+            'packingUnits'     => $service->getPackingUnits(
                 search: $this->search,
                 page: $this->getPage()
             ),
-            'trolleys' => $service->getOpenTrolleys(),
         ]);
     }
 }

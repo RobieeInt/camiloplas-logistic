@@ -6,6 +6,7 @@ use App\Http\Controllers\ProfileController;
 use App\Livewire\Pages\Dashboard\Index as DashboardIndex;
 use App\Livewire\Pages\Fgd\Index as FgdIndex;
 use App\Livewire\Pages\Loading\Index as LoadingIndex;
+use App\Livewire\Pages\ScanLog\Index as ScanLogIndex;
 use App\Livewire\Pages\Menus\Index as MenuIndex;
 use App\Livewire\Pages\Roles\Index as RoleIndex;
 use App\Livewire\Pages\TemporaryWarehouse\Index as TemporaryWarehouseIndex;
@@ -79,6 +80,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/loading/print-surat-jalan/{deliveryOrderId}', [LoadingPrintController::class, 'suratJalan'])
         ->name('loading.print-surat-jalan')
         ->middleware('permission:loading.view');
+
+    Route::get('/scan-log', ScanLogIndex::class)
+        ->name('scan-log.index')
+        ->middleware('permission:scan-log.view');
 
 
 

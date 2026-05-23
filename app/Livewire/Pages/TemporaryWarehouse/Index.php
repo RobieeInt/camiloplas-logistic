@@ -18,13 +18,14 @@ class Index extends Component
 
     // Print modal
     public bool $showPrintModal = false;
-    public ?int $productionOrderId = null;
+    public ?int $selectedSpkId = null;
     public int $totalBox = 1;
     public int $qtyPerBox = 1000;
 
     // Scan modal (TW first scan)
     public bool $showScanModal = false;
     public string $twScanBarcode = '';
+    public ?array $scanResult = null;
 
     public function updatingSearch(): void
     {
@@ -35,7 +36,7 @@ class Index extends Component
 
     public function openPrintModal(): void
     {
-        $this->productionOrderId = null;
+        $this->selectedSpkId = null;
         $this->totalBox = 1;
         $this->qtyPerBox = 1000;
         $this->showPrintModal = true;
@@ -50,25 +51,26 @@ class Index extends Component
     public function printBarcode(TemporaryWarehouseService $service): void
     {
         $this->validate([
-            'productionOrderId' => ['required', 'integer'],
-            'totalBox'          => ['required', 'integer', 'min:1', 'max:500'],
-            'qtyPerBox'         => ['required', 'integer', 'min:1', 'max:100000'],
+            'selectedSpkId' => ['required', 'integer'],
+            'totalBox'      => ['required', 'integer', 'min:1', 'max:500'],
+            'qtyPerBox'     => ['required', 'integer', 'min:1', 'max:100000'],
         ], [
-            'qtyPerBox.required' => 'Qty per dus wajib diisi.',
-            'qtyPerBox.min'      => 'Qty per dus minimal 1 PCS.',
-            'qtyPerBox.max'      => 'Qty per dus maksimal 100.000 PCS.',
+            'selectedSpkId.required' => 'Pilih SPK terlebih dahulu.',
+            'qtyPerBox.required'     => 'Qty per dus wajib diisi.',
+            'qtyPerBox.min'          => 'Qty per dus minimal 1 PCS.',
+            'qtyPerBox.max'          => 'Qty per dus maksimal 100.000 PCS.',
         ]);
 
         try {
             $batchId = $service->printBarcode(
-                productionOrderId: $this->productionOrderId,
+                spkId: $this->selectedSpkId,
                 totalBox: $this->totalBox,
                 qtyPerBox: $this->qtyPerBox,
-                userId: auth()->id()
+                userId: auth()->id(),
             );
 
             $this->showPrintModal = false;
-            $this->reset(['productionOrderId', 'totalBox', 'qtyPerBox']);
+            $this->reset(['selectedSpkId', 'totalBox', 'qtyPerBox']);
             $this->totalBox = 1;
             $this->qtyPerBox = 1000;
 
@@ -85,6 +87,7 @@ class Index extends Component
     public function openScanModal(): void
     {
         $this->twScanBarcode = '';
+        $this->scanResult = null;
         $this->showScanModal = true;
         $this->resetValidation();
         $this->dispatch('tw-scan-modal-opened');
@@ -94,6 +97,7 @@ class Index extends Component
     {
         $this->showScanModal = false;
         $this->twScanBarcode = '';
+        $this->scanResult = null;
         $this->resetValidation();
         $this->dispatch('tw-scan-modal-closed');
     }
@@ -111,15 +115,12 @@ class Index extends Component
             );
 
             $this->twScanBarcode = '';
-
-            session()->flash(
-                'tw_scan_success',
-                "Scan berhasil: {$result->box_number} ({$result->item_name}) → status TW_SCANNED."
-            );
+            $this->scanResult = (array) $result;
 
             $this->dispatch('tw-scan-ready-again');
         } catch (\Exception $e) {
             $this->twScanBarcode = '';
+            $this->scanResult = null;
             session()->flash('tw_scan_error', $e->getMessage());
             $this->dispatch('tw-scan-ready-again');
         }
@@ -127,9 +128,14 @@ class Index extends Component
 
     public function render(TemporaryWarehouseService $service)
     {
+        $availableBatches = $this->selectedSpkId
+            ? $service->getAvailableBatches((int) $this->selectedSpkId)
+            : [];
+
         return view('livewire.pages.temporary-warehouse.index', [
             'summary'          => $service->summary(),
-            'productionOrders' => $service->getProductionOrders(),
+            'spkList'          => $service->getSpkList(),
+            'availableBatches' => $availableBatches,
             'packingUnits'     => $service->getPackingUnits(
                 search: $this->search,
                 page: $this->getPage()

@@ -42,6 +42,8 @@ class RolePermissionSeeder extends Seeder
             'loading.view',
             'loading.scan',
             'loading.print-document',
+
+            'scan-log.view',
         ];
 
         foreach ($permissions as $permission) {
@@ -115,6 +117,7 @@ class RolePermissionSeeder extends Seeder
             'fgd.view',
             'loading.view',
             'loading.print-document',
+            'scan-log.view',
         ]);
     }
 }

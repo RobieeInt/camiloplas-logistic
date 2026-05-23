@@ -194,7 +194,7 @@
                     <div><strong>DO:</strong> {{ $order->do_number }}</div>
                     <div><strong>PO Customer:</strong> {{ $order->customer_po_number ?? '-' }}</div>
                     <div><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($order->loaded_at)->format('d/m/Y H:i') }}</div>
-                    <div><strong>Print Count:</strong> {{ ($order->do_print_count ?? 0) + 1 }}</div>
+                    {{-- <div><strong>Print Count:</strong> {{ ($order->do_print_count ?? 0) + 1 }}</div> --}}
                 </div>
             </div>
 

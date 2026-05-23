@@ -223,19 +223,38 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label class="form-label fw-semibold">SPK Produksi</label>
-                            <select wire:model="productionOrderId" class="form-select rounded-3 @error('productionOrderId') is-invalid @enderror">
+                            <select wire:model.live="selectedSpkId" class="form-select rounded-3 @error('selectedSpkId') is-invalid @enderror">
                                 <option value="">Pilih SPK</option>
-                                @foreach ($productionOrders as $po)
-                                    <option value="{{ $po->id }}">
-                                        {{ $po->spk_number }} — {{ $po->item_name }}
-                                        @if ($po->so_number) [{{ $po->so_number }}] @endif
+                                @foreach ($spkList as $spk)
+                                    <option value="{{ $spk->id }}">
+                                        {{ $spk->spk_number }} — {{ $spk->product }}
+                                        @if ($spk->ref_so) [{{ $spk->ref_so }}] @endif
+                                        @if ($spk->factory) · {{ $spk->factory }} @endif
                                     </option>
                                 @endforeach
                             </select>
-                            @error('productionOrderId')
+                            @error('selectedSpkId')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
+
+                        @if ($selectedSpkId && count($availableBatches) > 0)
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold text-success">
+                                <i class="bi bi-check-circle me-1"></i>
+                                Batch QC ({{ count($availableBatches) }} batch tersedia)
+                            </label>
+                            <div class="rounded-3 border p-2 bg-success-subtle small">
+                                @foreach ($availableBatches as $batch)
+                                <div class="d-flex justify-content-between py-1 {{ !$loop->last ? 'border-bottom border-success-subtle' : '' }}">
+                                    <span class="fw-semibold">{{ $batch->batch_number }}</span>
+                                    <span class="text-muted">{{ $batch->berat }} kg · QC: {{ $batch->qc_operator }}</span>
+                                </div>
+                                @endforeach
+                            </div>
+                            <div class="form-text">Batch tertaut otomatis saat barcode di-scan di TW.</div>
+                        </div>
+                        @endif
 
                         <div class="row g-3 mb-3">
                             <div class="col-6">
@@ -304,8 +323,89 @@
 
                 <form wire:submit.prevent="scanProd">
                     <div class="modal-body">
-                        @if (session('tw_scan_success'))
-                            <div class="alert alert-success border-0 rounded-3">{{ session('tw_scan_success') }}</div>
+                        @if ($scanResult)
+                            <div class="alert alert-success border-0 rounded-3 mb-3">
+                                <div class="fw-semibold mb-2">
+                                    <i class="bi bi-check-circle-fill me-1"></i>
+                                    Scan Berhasil — {{ $scanResult['box_number'] }}
+                                </div>
+                                <div class="row g-2 small">
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Barcode:</span>
+                                        <span class="fw-semibold">{{ $scanResult['barcode'] }}</span>
+                                    </div>
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Item:</span>
+                                        <span class="fw-semibold">{{ $scanResult['item_name'] }}</span>
+                                    </div>
+                                    @if ($scanResult['spk_number'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">SPK:</span>
+                                        <span class="fw-semibold">{{ $scanResult['spk_number'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['factory'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Pabrik:</span>
+                                        <span class="fw-semibold">{{ $scanResult['factory'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['batch_number'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Batch:</span>
+                                        <span class="fw-semibold">{{ $scanResult['batch_number'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['lot_number'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">LOT:</span>
+                                        <span class="fw-semibold">{{ $scanResult['lot_number'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['operator'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Operator:</span>
+                                        <span class="fw-semibold">{{ $scanResult['operator'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['mesin'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Mesin:</span>
+                                        <span class="fw-semibold">{{ $scanResult['mesin'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['shift'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Shift:</span>
+                                        <span class="fw-semibold">{{ $scanResult['shift'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['berat'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Berat:</span>
+                                        <span class="fw-semibold">{{ $scanResult['berat'] }} kg</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['qc_operator'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">QC Inspector:</span>
+                                        <span class="fw-semibold">{{ $scanResult['qc_operator'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['so_number'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">No. SO:</span>
+                                        <span class="fw-semibold">{{ $scanResult['so_number'] }}</span>
+                                    </div>
+                                    @endif
+                                    @if ($scanResult['customer'])
+                                    <div class="col-6">
+                                        <span class="text-success-emphasis">Customer:</span>
+                                        <span class="fw-semibold">{{ $scanResult['customer'] }}</span>
+                                    </div>
+                                    @endif
+                                </div>
+                            </div>
                         @endif
                         @if (session('tw_scan_error'))
                             <div class="alert alert-danger border-0 rounded-3">{{ session('tw_scan_error') }}</div>

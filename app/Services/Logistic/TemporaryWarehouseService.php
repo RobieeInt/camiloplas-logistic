@@ -40,16 +40,55 @@ class TemporaryWarehouseService
                 po.production_date,
                 po.planned_qty,
                 po.status,
+                po.ref_so,
                 i.item_code,
                 i.item_name,
                 i.uom,
                 so.so_number,
-                so.customer_name as so_customer
+                so.customer_name as so_customer,
+                so.product       as so_product
             FROM production_orders po
             INNER JOIN items i ON po.item_id = i.id
             LEFT JOIN sales_orders so ON po.sales_order_id = so.id
             ORDER BY po.production_date DESC, po.id DESC
         ");
+    }
+
+    public function getSpkList(): array
+    {
+        return DB::select("
+            SELECT
+                s.id,
+                s.spk_number,
+                s.type,
+                s.product,
+                s.factory,
+                s.department,
+                s.status,
+                s.ref_so,
+                so.customer_name
+            FROM spk s
+            LEFT JOIN sales_orders so ON so.so_number = s.ref_so
+            ORDER BY s.id DESC
+        ");
+    }
+
+    public function getAvailableBatches(int $spkId): array
+    {
+        return DB::select("
+            SELECT
+                bpl.id,
+                bpl.batch_number,
+                bpl.lot_number,
+                bpl.product,
+                bpl.berat,
+                bpl.qc_operator,
+                bpl.qc_printed_at,
+                bpl.status
+            FROM batch_pickup_log bpl
+            WHERE bpl.spk_id = ?
+            ORDER BY bpl.id DESC
+        ", [$spkId]);
     }
 
     public function getPackingUnits(string $search = '', int $perPage = 10, int $page = 1): LengthAwarePaginator
@@ -153,25 +192,9 @@ class TemporaryWarehouseService
         ");
     }
 
-    public function printBarcode(int $productionOrderId, int $totalBox, int $qtyPerBox, int $userId): string
+    public function printBarcode(int $spkId, int $totalBox, int $qtyPerBox, int $userId): string
     {
-        $poResult = DB::select("
-            SELECT
-                po.id,
-                po.item_id,
-                po.production_date,
-                i.uom
-            FROM production_orders po
-            INNER JOIN items i ON po.item_id = i.id
-            WHERE po.id = ?
-            LIMIT 1
-        ", [$productionOrderId]);
-
-        if (!$poResult) {
-            throw new \Exception('SPK tidak ditemukan.');
-        }
-
-        $po = $poResult[0];
+        $po = $this->getOrCreatePoForSpk($spkId);
         $batchId = 'PB-' . now()->format('YmdHis') . '-' . $userId;
 
         DB::beginTransaction();
@@ -189,15 +212,17 @@ class TemporaryWarehouseService
                         print_batch_id,
                         qty,
                         uom,
+                        batch_number,
+                        lot_number,
                         printed_at,
                         printed_by,
                         status,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'PRINTED', NOW(), NOW())
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NOW(), ?, 'PRINTED', NOW(), NOW())
                 ", [
-                    $productionOrderId,
+                    $po->id,
                     $po->item_id,
                     'BOX ' . str_pad($i, 3, '0', STR_PAD_LEFT) . '-' . $running,
                     (string) $running,
@@ -215,6 +240,74 @@ class TemporaryWarehouseService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    private function getOrCreatePoForSpk(int $spkId): object
+    {
+        $spkResult = DB::select("SELECT * FROM spk WHERE id = ? LIMIT 1", [$spkId]);
+        if (!$spkResult) {
+            throw new \Exception('SPK tidak ditemukan.');
+        }
+        $spk = $spkResult[0];
+
+        $poResult = DB::select("
+            SELECT po.id, po.item_id, po.production_date, i.uom
+            FROM production_orders po
+            INNER JOIN items i ON po.item_id = i.id
+            WHERE po.spk_number = ?
+            LIMIT 1
+        ", [$spk->spk_number]);
+
+        if ($poResult) {
+            return $poResult[0];
+        }
+
+        // Resolve so_id from ref_so
+        $soId = null;
+        if (!empty($spk->ref_so)) {
+            $soResult = DB::select("SELECT id FROM sales_orders WHERE so_number = ? LIMIT 1", [$spk->ref_so]);
+            if ($soResult) {
+                $soId = $soResult[0]->id;
+            }
+        }
+
+        // Match item by spk.product name
+        $itemId = null;
+        $uom    = 'PCS';
+
+        if (!empty($spk->product)) {
+            $itemByName = DB::select("SELECT id, uom FROM items WHERE item_name = ? LIMIT 1", [$spk->product]);
+            if ($itemByName) {
+                $itemId = $itemByName[0]->id;
+                $uom    = $itemByName[0]->uom ?? 'PCS';
+            }
+        }
+
+        // Fallback: first item in table
+        if (!$itemId) {
+            $itemResult = DB::select("SELECT id, uom FROM items LIMIT 1");
+            if (!$itemResult) {
+                throw new \Exception('Tidak ada item tersedia untuk membuat Production Order.');
+            }
+            $itemId = $itemResult[0]->id;
+            $uom    = $itemResult[0]->uom ?? 'PCS';
+        }
+
+        DB::insert("
+            INSERT INTO production_orders (
+                spk_number, item_id, sales_order_id, ref_so,
+                production_date, planned_qty, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, CURDATE(), 0, 'OPEN', NOW(), NOW())
+        ", [$spk->spk_number, $itemId, $soId, $spk->ref_so ?? null]);
+
+        $newId = (int) DB::getPdo()->lastInsertId();
+
+        return (object) [
+            'id'              => $newId,
+            'item_id'         => $itemId,
+            'production_date' => now()->toDateString(),
+            'uom'             => $uom,
+        ];
     }
 
     private function resolveBarcode(string $raw): string
@@ -263,12 +356,79 @@ class TemporaryWarehouseService
             WHERE id = ?
         ", [$userId, $packing->id]);
 
-        return (object) [
-            'barcode'    => $packing->barcode,
-            'box_number' => $packing->box_number,
-            'item_name'  => $packing->item_name,
-            'item_code'  => $packing->item_code,
+        $result = [
+            'barcode'      => $packing->barcode,
+            'box_number'   => $packing->box_number,
+            'item_name'    => $packing->item_name,
+            'item_code'    => $packing->item_code,
+            'batch_number' => $packing->batch_number ?? null,
+            'lot_number'   => $packing->lot_number ?? null,
+            'spk_number'   => null,
+            'factory'      => null,
+            'so_number'    => null,
+            'customer'     => null,
+            'operator'     => null,
+            'mesin'        => null,
+            'shift'        => null,
+            'berat'        => null,
+            'qc_operator'  => null,
         ];
+
+        $po = DB::select("
+            SELECT po.spk_number, po.ref_so, po.factory
+            FROM production_orders po
+            WHERE po.id = ?
+            LIMIT 1
+        ", [$packing->production_order_id]);
+
+        if ($po) {
+            $result['spk_number'] = $po[0]->spk_number;
+            $result['factory']    = $po[0]->factory ?? null;
+
+            if (!empty($po[0]->ref_so)) {
+                $so = DB::select("
+                    SELECT so_number, customer_name
+                    FROM sales_orders
+                    WHERE so_number = ?
+                    LIMIT 1
+                ", [$po[0]->ref_so]);
+
+                if ($so) {
+                    $result['so_number'] = $so[0]->so_number;
+                    $result['customer']  = $so[0]->customer_name;
+                }
+            }
+        }
+
+        $batchNum = $packing->batch_number ?? null;
+        if ($batchNum) {
+            $batch = DB::select("
+                SELECT lot_number, berat, qc_operator
+                FROM batch_pickup_log
+                WHERE batch_number = ?
+                LIMIT 1
+            ", [$batchNum]);
+
+            if ($batch) {
+                $result['berat']      = $batch[0]->berat;
+                $result['qc_operator'] = $batch[0]->qc_operator;
+
+                $roll = DB::select("
+                    SELECT operator, mesin_kode, shift
+                    FROM rollsheet
+                    WHERE lot_number = ?
+                    LIMIT 1
+                ", [$batch[0]->lot_number]);
+
+                if ($roll) {
+                    $result['operator'] = $roll[0]->operator;
+                    $result['mesin']    = $roll[0]->mesin_kode;
+                    $result['shift']    = $roll[0]->shift;
+                }
+            }
+        }
+
+        return (object) $result;
     }
 
     public function getPrintLabels(string $batchId): array

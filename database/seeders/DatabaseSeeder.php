@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             ItemsSeeder::class,             // harus sebelum TWH & SO seeder
             TemporaryWarehouseSeeder::class,
             SalesOrderSeeder::class,
+            Db77DataSeeder::class,          // data pabrik dari db_77 (harus setelah TWH seeder)
         ]);
 
         $user = User::firstOrCreate(

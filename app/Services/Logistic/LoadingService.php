@@ -28,11 +28,20 @@ class LoadingService
                 so.customer_name,
                 so.customer_address,
                 so.status,
-                COUNT(sod.id) as total_items
+                COALESCE(sod_cnt.cnt, 0) + COALESCE(si_cnt.cnt, 0) as total_items
             FROM sales_orders so
-            LEFT JOIN sales_order_details sod ON so.id = sod.sales_order_id
-            WHERE so.status = 'OPEN'
-            GROUP BY so.id, so.so_number, so.customer_name, so.customer_address, so.status
+            LEFT JOIN (
+                SELECT sales_order_id, COUNT(*) as cnt
+                FROM sales_order_details
+                GROUP BY sales_order_id
+            ) sod_cnt ON sod_cnt.sales_order_id = so.id
+            LEFT JOIN (
+                SELECT so_id, COUNT(*) as cnt
+                FROM so_items
+                GROUP BY so_id
+            ) si_cnt ON si_cnt.so_id = so.id
+            WHERE so.status IN ('OPEN', 'in_production')
+              AND (COALESCE(sod_cnt.cnt, 0) + COALESCE(si_cnt.cnt, 0)) > 0
             ORDER BY so.id DESC
         ");
     }
@@ -57,39 +66,42 @@ class LoadingService
             return ['sos' => [], 'details' => []];
         }
 
-        // Merge item by item_id, sum qty across all selected SOs + stok FGW
+        // Merge item by item_id, sum qty — UNION sales_order_details + so_items
         $details = DB::select("
             SELECT
-                sod.item_id,
+                src.item_id,
                 i.item_code,
                 i.item_name,
                 i.uom,
-                SUM(sod.qty) as qty,
+                SUM(src.qty) as qty,
                 (
                     SELECT COUNT(*)
                     FROM packing_units pu
-                    WHERE pu.item_id = sod.item_id
+                    WHERE pu.item_id = src.item_id
                     AND pu.status = 'RECEIVED_FGW'
                 ) as stock_dus,
                 (
                     SELECT COALESCE(SUM(pu2.qty), 0)
                     FROM packing_units pu2
-                    WHERE pu2.item_id = sod.item_id
+                    WHERE pu2.item_id = src.item_id
                     AND pu2.status = 'RECEIVED_FGW'
                 ) as stock_pcs,
                 (
                     SELECT pu3.qty
                     FROM packing_units pu3
-                    WHERE pu3.item_id = sod.item_id
+                    WHERE pu3.item_id = src.item_id
                     AND pu3.status = 'RECEIVED_FGW'
                     LIMIT 1
                 ) as qty_per_box
-            FROM sales_order_details sod
-            INNER JOIN items i ON sod.item_id = i.id
-            WHERE sod.sales_order_id IN ($placeholders)
-            GROUP BY sod.item_id, i.item_code, i.item_name, i.uom
-            ORDER BY sod.item_id ASC
-        ", $soIds);
+            FROM (
+                SELECT item_id, qty FROM sales_order_details WHERE sales_order_id IN ($placeholders)
+                UNION ALL
+                SELECT item_id, qty FROM so_items WHERE so_id IN ($placeholders) AND item_id IS NOT NULL
+            ) src
+            INNER JOIN items i ON src.item_id = i.id
+            GROUP BY src.item_id, i.item_code, i.item_name, i.uom
+            ORDER BY src.item_id ASC
+        ", array_merge($soIds, $soIds));
 
         // Hitung PCS yang sudah masuk truck dari DO-DO milik SO ini
         $loadedRows = DB::select("
@@ -130,12 +142,12 @@ class LoadingService
             SELECT id, so_number, customer_name, customer_address, customer_po_number
             FROM sales_orders
             WHERE id IN ($placeholders)
-            AND status = 'OPEN'
+            AND status IN ('OPEN', 'in_production')
             ORDER BY id ASC
         ", $soIds);
 
         if (count($sos) !== count($soIds)) {
-            throw new \Exception('Satu atau lebih SO tidak ditemukan atau tidak dalam status OPEN.');
+            throw new \Exception('Satu atau lebih SO tidak ditemukan atau statusnya tidak valid.');
         }
 
         $doNumber = trim($doNumber);
@@ -148,13 +160,16 @@ class LoadingService
             throw new \Exception("DO number {$doNumber} sudah digunakan.");
         }
 
-        // Ambil semua item unik dari semua SO yang dipilih
+        // Ambil semua item unik — UNION sales_order_details + so_items
         $soDetails = DB::select("
             SELECT DISTINCT item_id
-            FROM sales_order_details
-            WHERE sales_order_id IN ($placeholders)
+            FROM (
+                SELECT item_id FROM sales_order_details WHERE sales_order_id IN ($placeholders)
+                UNION ALL
+                SELECT item_id FROM so_items WHERE so_id IN ($placeholders) AND item_id IS NOT NULL
+            ) src
             ORDER BY item_id ASC
-        ", $soIds);
+        ", array_merge($soIds, $soIds));
 
         if (empty($soDetails)) {
             throw new \Exception('SO yang dipilih belum memiliki detail item.');
@@ -636,17 +651,20 @@ class LoadingService
 
                 $check = DB::select("
                     SELECT
-                        COALESCE(SUM(sod.qty), 0)                        as total_ordered_pcs,
+                        COALESCE(SUM(src.qty), 0) as total_ordered_pcs,
                         COALESCE((
                             SELECT SUM(pu.qty)
                             FROM loading_items li
                             INNER JOIN packing_units pu ON li.packing_unit_id = pu.id
                             INNER JOIN delivery_orders dox ON li.delivery_order_id = dox.id
                             WHERE dox.sales_order_id = ?
-                        ), 0)                                             as total_loaded_pcs
-                    FROM sales_order_details sod
-                    WHERE sod.sales_order_id = ?
-                ", [$soId, $soId]);
+                        ), 0) as total_loaded_pcs
+                    FROM (
+                        SELECT qty FROM sales_order_details WHERE sales_order_id = ?
+                        UNION ALL
+                        SELECT qty FROM so_items WHERE so_id = ? AND item_id IS NOT NULL
+                    ) src
+                ", [$soId, $soId, $soId]);
 
                 if ($check && (int) $check[0]->total_loaded_pcs >= (int) $check[0]->total_ordered_pcs) {
                     DB::update("

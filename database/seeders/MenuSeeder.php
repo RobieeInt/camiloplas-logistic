@@ -93,5 +93,14 @@ class MenuSeeder extends Seeder
             'permission_name' => 'loading.view',
             'sort_order' => 4,
         ]);
+
+        Menu::create([
+            'parent_id' => $logistic->id,
+            'name' => 'Log Scan Dus',
+            'route' => 'scan-log.index',
+            'icon' => 'bi bi-journal-text',
+            'permission_name' => 'scan-log.view',
+            'sort_order' => 5,
+        ]);
     }
 }

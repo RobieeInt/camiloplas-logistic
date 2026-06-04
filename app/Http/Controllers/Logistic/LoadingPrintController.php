@@ -34,6 +34,7 @@ class LoadingPrintController extends Controller
 
         $data['isDuplicate'] = $data['order']->surat_jalan_print_count > 0;
 
+
         return view('prints.loading-surat-jalan', $data);
     }
 }

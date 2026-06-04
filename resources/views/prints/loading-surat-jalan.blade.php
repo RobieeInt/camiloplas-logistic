@@ -151,36 +151,26 @@
                 <div><strong>Customer:</strong> {{ $order->customer_name }}</div>
                 <div><strong>Alamat:</strong> {{ $order->customer_address ?? '-' }}</div>
                 <div><strong>No Truck:</strong> {{ $order->truck_number ?? '-' }}</div>
-                <div><strong>Driver:</strong> {{ $order->driver_name ?? '-' }}</div>
+                {{-- <div><strong>Driver:</strong> {{ $order->driver_name ?? '-' }}</div> --}}
             </div>
         </div>
 
         <table>
             <thead>
                 <tr>
-                    <th width="35">No</th>
-                    <th>Barcode</th>
-                    <th>Box</th>
-                    <th>Item</th>
-                    <th>Troli</th>
-                    <th>Rak</th>
-                    <th width="70">Qty</th>
+                    <th width="40">No</th>
+                    <th>Item Code</th>
+                    <th>Item Name</th>
+                    <th width="90">Qty Box</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach ($loadedItems as $index => $item)
+                @foreach ($items as $index => $item)
                     <tr>
                         <td>{{ $index + 1 }}</td>
-                        <td>{{ $item->barcode }}</td>
-                        <td>{{ $item->box_number }}</td>
-                        <td>
-                            {{ $item->item_name }}
-                            <br>
-                            <small>{{ $item->item_code }}</small>
-                        </td>
-                        <td>{{ $item->trolley_code ?? '-' }}</td>
-                        <td>{{ $item->rack_code ?? '-' }}</td>
-                        <td>{{ number_format($item->qty, 0, ',', '.') }} {{ $item->uom }}</td>
+                        <td>{{ $item->item_code }}</td>
+                        <td>{{ $item->item_name }}</td>
+                        <td>{{ $item->loaded_boxes }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -189,22 +179,22 @@
         <div class="signatures">
             <div class="signature-box">
                 <div>Dibuat</div>
-                <div>(__________)</div>
+                <div>({{ $order->loaded_by_name ?? '-' }})</div>
             </div>
 
             <div class="signature-box">
                 <div>Warehouse</div>
-                <div>(__________)</div>
+                <div>({{ $order->loaded_by_name ?? '-' }})</div>
             </div>
 
             <div class="signature-box">
                 <div>Security</div>
-                <div>(__________)</div>
+                <div>({{ $order->security_name ?? '________' }})</div>
             </div>
 
             <div class="signature-box">
                 <div>Driver</div>
-                <div>(__________)</div>
+                <div>({{ $order->driver_name ?? '-' }})</div>
             </div>
         </div>
     </div>

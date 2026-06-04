@@ -202,47 +202,45 @@
                 <div><strong>Customer:</strong> {{ $order->customer_name }}</div>
                 <div><strong>Alamat:</strong> {{ $order->customer_address ?? '-' }}</div>
                 <div><strong>No Truck:</strong> {{ $order->truck_number ?? '-' }}</div>
-                <div><strong>Driver:</strong> {{ $order->driver_name ?? '-' }}</div>
-                <div><strong>Loaded By:</strong> {{ $order->loaded_by_name ?? '-' }}</div>
+                {{-- <div><strong>Driver:</strong> {{ $order->driver_name ?? '-' }}</div> --}}
+                {{-- <div><strong>Loaded By:</strong> {{ $order->loaded_by_name ?? '-' }}</div> --}}
             </div>
 
-            <table>
-                <thead>
+               <table>
+            <thead>
+                <tr>
+                    <th width="40">No</th>
+                    <th>Item Code</th>
+                    <th>Item Name</th>
+                    <th width="90">Qty Box</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($items as $index => $item)
                     <tr>
-                        <th width="40">No</th>
-                        <th>Item Code</th>
-                        <th>Item Name</th>
-                        <th width="90">Qty Box</th>
-                        <th width="90">UOM</th>
+                        <td>{{ $index + 1 }}</td>
+                        <td>{{ $item->item_code }}</td>
+                        <td>{{ $item->item_name }}</td>
+                        <td>{{ $item->loaded_boxes }}</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach ($items as $index => $item)
-                        <tr>
-                            <td>{{ $index + 1 }}</td>
-                            <td>{{ $item->item_code }}</td>
-                            <td>{{ $item->item_name }}</td>
-                            <td>{{ $item->loaded_boxes }}</td>
-                            <td>{{ $item->uom }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                @endforeach
+            </tbody>
+        </table>
 
             <div class="signatures">
                 <div class="signature-box">
                     <div>Dibuat Oleh</div>
-                    <div>(________________)</div>
+                    <div>({{ $order->loaded_by_name ?? '-' }})</div>
                 </div>
 
                 <div class="signature-box">
                     <div>Warehouse</div>
-                    <div>(________________)</div>
+                    <div>({{ $order->loaded_by_name ?? '-' }})</div>
                 </div>
 
                 <div class="signature-box">
                     <div>Driver</div>
-                    <div>(________________)</div>
+                    <div>({{ $order->driver_name ?? '-' }})</div>
                 </div>
             </div>
         </div>

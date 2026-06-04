@@ -486,7 +486,7 @@
                 }
                 const s = document.createElement('script');
                 s.id = 'html5-qrcode-script';
-                s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+                s.src = '/vendor/js/html5-qrcode.min.js';
                 s.onload = resolve;
                 s.onerror = reject;
                 document.body.appendChild(s);

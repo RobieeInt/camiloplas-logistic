@@ -207,7 +207,7 @@
         @endforeach
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="/vendor/js/jsbarcode.all.min.js"></script>
     <script>
         JsBarcode(".barcode").init();
 
